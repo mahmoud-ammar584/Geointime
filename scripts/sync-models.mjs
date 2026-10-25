@@ -1,0 +1,10 @@
+import { copyFileSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+for (const name of ['calculator.mjs', 'business.mjs']) copyFileSync('lib/' + name, 'public/' + name);
+const files = {template:'public/proposal-template.pdf', font:'public/fonts/Dosis-Medium.ttf', bold:'public/fonts/Dosis-Bold.ttf', semi:'public/fonts/Dosis-SemiBold.ttf'};
+const assets = Object.fromEntries(Object.entries(files).map(([key, path]) => [key, readFileSync(path).toString('base64')]));
+const parts = assets.template.match(/.{1,180000}/g);
+mkdirSync('lib/proposal-assets', {recursive:true});
+parts.forEach((part, index) => writeFileSync('lib/proposal-assets/template-' + String(index + 1).padStart(2, '0') + '.mjs', 'export default ' + JSON.stringify(part) + ';\n'));
+const imports = parts.map((_, index) => 'import part' + (index + 1) + ' from \'./proposal-assets/template-' + String(index + 1).padStart(2, '0') + '.mjs\';').join('\n');
+delete assets.template;
+writeFileSync('lib/proposal-assets.mjs', imports + '\nconst assets=' + JSON.stringify(assets) + ';\nassets.template=[' + parts.map((_, index) => 'part' + (index + 1)).join(',') + '].join(\'\');\nexport default assets;\n');
