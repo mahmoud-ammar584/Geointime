@@ -1,4 +1,4 @@
-import { calculate, approvalFor, POLICY } from './calculator.mjs';
+import { calculate, approvalFor, POLICY, renewalFor } from './calculator.mjs';
 const $ = id => document.getElementById(id);
 const money = value => value === null ? 'بانتظار التسعير' : new Intl.NumberFormat('en-US', {minimumFractionDigits: value % 100 ? 2 : 0,maximumFractionDigits:2}).format(value / 100);
 const price = value => `${money(value)} <small>ج.م</small>`;
@@ -13,7 +13,7 @@ export function state() {
 function row(label,value,cls='') { return `<div class="breakdown-row ${cls}"><span class="row-label">${label}</span><strong>${value}</strong></div>`; }
 export function render() {
   const input = state();
-  const custom = Number(input.employees) >= 500 || Number(input.employees) < 30 || input.complex;
+  const custom = Number(input.employees) > 500 || Number(input.employees) < 30 || input.complex;
   $('custom-wrap').hidden = !custom;
   $('tax-wrap').hidden = input.taxMode !== 'specified';
   if (custom || input.taxMode === 'specified') document.querySelector('.settings').open = true;
@@ -34,7 +34,15 @@ export function render() {
   }
   $('error').hidden=true;
   $('quote-results').hidden=false;
-  const q=latest, first=q.schedule[0];
+  const q=latest, first=q.schedule[0], renewal=renewalFor(q,input.startDate);
+  $('setup-automatic').textContent=q.implementation===null?'التهيئة تحتاج تسعير نطاق خاص.':'رسوم التهيئة المحتسبة تلقائيًا: '+money(q.implementation)+' ج.م — مرة واحدة عند البداية.';
+  $('next-payment-date').textContent=dateText(renewal.date);
+  $('next-payment-subtotal').innerHTML=price(renewal.subtotal);
+  $('next-payment-tax').innerHTML=renewal.tax===null?'غير محددة':price(renewal.tax);
+  $('next-payment-total').innerHTML=price(renewal.total===null?renewal.subtotal:renewal.total);
+  $('next-payment-label').textContent=renewal.tax===null?'قيمة الدفعة التالية قبل الضريبة':q.taxRate===0?'قيمة الدفعة التالية بدون ضريبة':'قيمة الدفعة التالية شاملة '+q.taxRate+'% ضريبة';
+  $('anniversary-date').textContent=dateText(renewal.anniversaryDate);
+  $('renewal-note').textContent='اشتراك '+q.cycleLabel+' والإضافات المتكررة فقط؛ لا تتكرر التهيئة أو الأجهزة أو الرسوم الأخرى لمرة واحدة. التقدير بنفس الأسعار والخصم الحاليين؛ أي تغيير عند التجديد يُتفق عليه منفصلًا.';
   const tier = POLICY.tiers.find(t=>q.billedEmployees>=t.from&&q.billedEmployees<=t.to);
   for (const node of document.querySelectorAll('[data-rate]')) {
     const key=node.dataset.rate;
@@ -87,7 +95,7 @@ export function render() {
   const warnings=[...q.warnings];
   if(!q.approval.needsApproval) warnings.unshift('الخصم ضمن صلاحية المبيعات (0–5%)، مع الالتزام بالسياسة المعتمدة.');
   if(q.cycle==='quarterly') warnings.push('الربع سنوي بزيادة 3%، وفق توضيحك التجاري بتاريخ 25 أكتوبر 2026، كمعلومة مكمّلة لملف السياسة.');
-  if(q.billedEmployees===500) warnings.push('عند 500 موظف استُخدمت شريحة 251–500 (15,000 ج.م). صياغة 500+ متداخلة في الملف؛ أكّد التطبيق تجاريًا.');
+  if(q.billedEmployees===500) warnings.push('تهيئة 500 موظف ضمن شريحة 251–500: 15,000 ج.م تلقائيًا، وفق توضيحك.');
   $('warnings').innerHTML=warnings.map(w=>`<li>${escape(w)}</li>`).join('');
   $('compare-body').innerHTML=Object.keys(POLICY.cycles).map(cycle=>{
     const option=calculate({...input,cycle}), payment=option.schedule[0];
@@ -98,7 +106,7 @@ export function render() {
 function summary() {
   const q=latest,first=q.schedule[0];
   const val=n=>money(n)+' ج.م';
-  const lines=['GeoInTime — ملخص عرض السعر', $('customer').value.trim() ? 'الشركة: '+$('customer').value.trim():'', 'الحالة: '+$('status-badge').textContent, 'الباقة: '+q.planName, `الموظفون: ${q.employees} فعلي / ${q.billedEmployees} محتسب`, 'دورية الدفع: '+q.cycleLabel, 'البداية: '+dateText(first.date), `السعر الأساسي: ${q.baseRate} ج.م / موظف / شهر`, `زيادة الدورية: ${q.upliftRate}% | خصم الباقة: ${q.discount}%`, 'صافي الباقة الشهري: '+val(q.coreMonthly), 'الإضافات المتكررة / سنة: '+val(q.extrasAnnual), 'الإضافات والأجهزة لمرة واحدة: '+val(q.extrasOnce), q.hardwareQty?`أجهزة Locator: ${q.hardwareQty} × ${q.hardwareUnitPrice} ج.م = ${val(q.hardwareTotal)}`:'', q.extraAmount>0?'وصف الإضافة: '+($('extraName').value.trim()||'إضافة يدوية غير موصوفة'):'', 'التهيئة: '+val(q.implementation), 'الضريبة: '+(q.taxRate===null?'غير محددة؛ الأرقام قبل الضريبة':q.taxRate+'% مدخلة يدويًا'), 'المستحق عند البداية: '+(first.subtotal===null?'غير مكتمل':val(q.taxRate===null?first.subtotal:first.total)), 'إجمالي أول سنة: '+val(q.taxRate===null?q.firstYearSubtotal:q.firstYearTotal), '', 'جدول الدفعات:', ...q.schedule.map(r=>`${r.number}. ${dateText(r.date)} — ${r.subtotal===null?'غير مكتمل':val(q.taxRate===null?r.subtotal:r.total)}`), '', ...Array.from($('warnings').children,x=>'• '+x.textContent), '• الأجهزة والتركيب والتكاملات والعمل المخصص تُسعّر منفصلًا، ما لم يُتفق خلاف ذلك.', 'المصدر: سياسة GeoInTime للتسعير والخصومات والشروط التجارية 2026، ص2–3.'];
+  const lines=['GeoInTime — ملخص عرض السعر', $('customer').value.trim() ? 'الشركة: '+$('customer').value.trim():'', 'الحالة: '+$('status-badge').textContent, 'الباقة: '+q.planName, `الموظفون: ${q.employees} فعلي / ${q.billedEmployees} محتسب`, 'دورية الدفع: '+q.cycleLabel, 'البداية: '+dateText(first.date), `السعر الأساسي: ${q.baseRate} ج.م / موظف / شهر`, `زيادة الدورية: ${q.upliftRate}% | خصم الباقة: ${q.discount}%`, 'صافي الباقة الشهري: '+val(q.coreMonthly), 'الإضافات المتكررة / سنة: '+val(q.extrasAnnual), 'الإضافات والأجهزة لمرة واحدة: '+val(q.extrasOnce), q.hardwareQty?`أجهزة Locator: ${q.hardwareQty} × ${q.hardwareUnitPrice} ج.م = ${val(q.hardwareTotal)}`:'', q.extraAmount>0?'وصف الإضافة: '+($('extraName').value.trim()||'إضافة يدوية غير موصوفة'):'', 'التهيئة: '+val(q.implementation), 'الضريبة: '+(q.taxRate===null?'غير محددة؛ الأرقام قبل الضريبة':q.taxMode==='none'?'بدون ضريبة':q.taxRate+'%'), 'المستحق عند البداية: '+(first.subtotal===null?'غير مكتمل':val(q.taxRate===null?first.subtotal:first.total)), 'إجمالي أول سنة: '+val(q.taxRate===null?q.firstYearSubtotal:q.firstYearTotal), 'الدفعة التالية: '+dateText(renewalFor(q,state().startDate).date)+' — '+val(renewalFor(q,state().startDate).total??renewalFor(q,state().startDate).subtotal)+' (بدون رسوم المرة الواحدة)', 'مراجعة التجديد السنوي: '+dateText(renewalFor(q,state().startDate).anniversaryDate), '', 'جدول الدفعات:', ...q.schedule.map(r=>`${r.number}. ${dateText(r.date)} — ${r.subtotal===null?'غير مكتمل':val(q.taxRate===null?r.subtotal:r.total)}`), '', ...Array.from($('warnings').children,x=>'• '+x.textContent), '• الأجهزة والتركيب والتكاملات والعمل المخصص تُسعّر منفصلًا، ما لم يُتفق خلاف ذلك.', 'المصدر: سياسة GeoInTime للتسعير والخصومات والشروط التجارية 2026، ص2–3.'];
   return lines.filter(x=>x!==null).join('\n');
 }
 $('startDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -118,6 +126,7 @@ render();
 export function loadQuote(d){
  HTMLFormElement.prototype.reset.call($('calculator-form'));
  for(const [key,value] of Object.entries(d.input)){const el=document.getElementById(key);if(el){if(el.type==='checkbox')el.checked=value;else el.value=value??'';}}
+ if(d.input.taxMode===undefined){$('taxMode').value=d.quote?.taxRate==null?'unknown':'specified';$('taxRate').value=d.quote?.taxRate??14;}
  for(const [name,value] of [['plan',d.input.plan],['billing',d.input.cycle]]){const radio=document.querySelector(`input[name="${name}"][value="${value}"]`);if(radio)radio.checked=true;}
  $('customer').value=d.customer;document.body.classList.remove('presentation-mode');$('presentation').textContent='وضع عرض العميل ↗';render();
 }
