@@ -1,6 +1,6 @@
 import { ownerFromRequest } from '../../../lib/server/session.mjs';
 import { sameOriginWrite } from '../../../lib/access.mjs';
-import { listForOwner,getForOwner,insertForOwner,updateForOwner } from '../../../lib/server/database.mjs';
+import { DatabaseError,listForOwner,getForOwner,insertForOwner,updateForOwner } from '../../../lib/server/database.mjs';
 // @ts-ignore shared dependency-free model
 import { calculate } from '../../../lib/calculator.mjs';
 // @ts-ignore
@@ -15,7 +15,8 @@ export async function GET(request:Request){const user=owner(request);if(!user)re
  }catch(e){return json({error:e instanceof Error?e.message:'تعذر تحميل السجل.'},503);}}
 export async function POST(request:Request){const user=owner(request);if(!user)return json({error:'تسجيل الدخول مطلوب.'},401);if(!sameOriginWrite(request))return json({error:'طلب غير مسموح.'},403);
  try{if(Number(request.headers.get('content-length')||0)>200000)return json({error:'البيانات أكبر من المسموح.'},413);
- const raw=await request.json();if(!raw||typeof raw!=='object')throw Error('بيانات الطلب غير صحيحة.');
+ const text=await request.text();if(Buffer.byteLength(text,'utf8')>200000)return json({error:'البيانات أكبر من المسموح.'},413);
+ const raw=JSON.parse(text);if(!raw||typeof raw!=='object')throw Error('بيانات الطلب غير صحيحة.');
  const body=raw as {kind:string;id?:string;revision:number;data:any};if(!['quote','settings'].includes(body.kind))return json({error:'نوع السجل غير صحيح.'},400);
  if(!Number.isInteger(body.revision)||body.revision<0)return json({error:'رقم النسخة غير صحيح.'},400);
  const id=body.kind==='settings'?'settings':String(body.id||'');if(!/^[a-zA-Z0-9_-]{1,80}$/.test(id))return json({error:'معرّف غير صحيح.'},400);
@@ -32,4 +33,5 @@ export async function POST(request:Request){const user=owner(request);if(!user)r
  const now=new Date().toISOString();const saved=existing?await updateForOwner(user,id,body.revision,data,now):await insertForOwner(user,id,body.kind,data,now);
  if(saved.length===0)return json({error:'السجل اتغير؛ حدّث الصفحة.'},409);
  return json({ok:true,id,revision:body.revision+1});
- }catch(error){return json({error:error instanceof Error?error.message:'تعذر حفظ السجل.'},400);}}
+ }catch(error){return json({error:error instanceof Error?error.message:'تعذر حفظ السجل.'},error instanceof DatabaseError?503:400);}}
+

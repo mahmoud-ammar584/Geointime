@@ -23,12 +23,6 @@ export function render() {
   const ap = approvalFor(Number(input.discount));
   $('approval').textContent = ap.text;
   $('approval').classList.toggle('caution',ap.needsApproval);
-  const count = Math.max(30,Number(input.employees)||30);
-  const tier = POLICY.tiers.find(t=>count>=t.from&&count<=t.to);
-  for (const node of document.querySelectorAll('[data-rate]')) {
-    const key=node.dataset.rate;
-    node.innerHTML = `${key==='combined'?tier.essentials+tier.operations:tier[key]} <small>ج.م</small>`;
-  }
   try {
     latest = calculate(input);
   } catch(error) {
@@ -41,6 +35,11 @@ export function render() {
   $('error').hidden=true;
   $('quote-results').hidden=false;
   const q=latest, first=q.schedule[0];
+  const tier = POLICY.tiers.find(t=>q.billedEmployees>=t.from&&q.billedEmployees<=t.to);
+  for (const node of document.querySelectorAll('[data-rate]')) {
+    const key=node.dataset.rate;
+    node.innerHTML = `${key==='combined'?tier.essentials+tier.operations:tier[key]} <small>ج.م</small>`;
+  }
   document.querySelectorAll('[data-tier]').forEach(node=>node.classList.toggle('active',Number(node.dataset.tier)===tier.from));
   document.querySelectorAll('[data-discount]').forEach(node=>node.classList.toggle('active',Number(node.dataset.discount)===q.discount));
   $('sidebar-tier').textContent='شريحتك الحالية: '+q.tier;
@@ -122,3 +121,4 @@ export function loadQuote(d){
  for(const [name,value] of [['plan',d.input.plan],['billing',d.input.cycle]]){const radio=document.querySelector(`input[name="${name}"][value="${value}"]`);if(radio)radio.checked=true;}
  $('customer').value=d.customer;document.body.classList.remove('presentation-mode');$('presentation').textContent='وضع عرض العميل ↗';render();
 }
+
