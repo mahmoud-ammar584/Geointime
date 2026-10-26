@@ -29,3 +29,16 @@ test('Quarter boundaries and leap-year end dates',()=>{assert.equal(currentQuart
 test('Saved quarter target prevents an unnecessary new-quarter prompt',()=>{const s=structuredClone(DEFAULT_SETTINGS);s.plans.push({...s.plans[0],id:'q1',start:'2027-01-01',end:'2027-03-31',target:200});assert.equal(targetClock(s,'2027-01-01').needsTarget,false);assert.equal(targetClock(s,'2027-04-01').needsTarget,true);});
 
 test('Hardware is excluded from commission regardless of invoice total',()=>{const r=buildReport([record('h',{input:{...input,hardwareQty:3,hardwareUnitPrice:2700}})]).deals[0];assert.equal(r.eligible,4968000);assert.equal(r.annualCommission,397440);assert.equal(r.data.quote.hardwareTotal,810000);});
+
+
+test('Lost deals retain optional loss notes, quote inputs, payments and general notes',()=>{
+ const lost=record('lost',{status:'lost',closingDate:null,lostNotes:'  السعر أعلى من الميزانية  ',notes:'متابعة لاحقًا',payments:[{id:'paid',date:'2026-10-25',amount:100}]});
+ assert.equal(lost.data.lostNotes,'السعر أعلى من الميزانية');assert.equal(lost.data.notes,'متابعة لاحقًا');
+ assert.deepEqual(lost.data.input,input);assert.equal(lost.data.payments[0].amount,100);
+ assert.equal(buildReport([lost]).deals.length,0);assert.equal(buildReport([lost]).plans[0].achieved,0);
+});
+test('Loss notes are optional and existing records default to empty loss notes',()=>{
+ assert.equal(record('lost',{status:'lost',closingDate:null}).data.lostNotes,'');
+ assert.equal(record('old').data.lostNotes,'');
+ assert.equal(record('long',{status:'lost',lostNotes:'x'.repeat(4000)}).data.lostNotes.length,3000);
+});
