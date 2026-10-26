@@ -11,7 +11,7 @@ const owner=(request:Request)=>ownerFromRequest(request);
 export async function GET(request:Request){const user=owner(request);if(!user)return json({error:'تسجيل الدخول مطلوب.'},401);try{
  const rows=await listForOwner(user),records=rows.map((r:any)=>({id:r.id,kind:r.kind,data:r.data,revision:r.revision,createdAt:r.created_at,updatedAt:r.updated_at}));
  const settings=records.find((r:any)=>r.kind==='settings'),quotes=records.filter((r:any)=>r.kind==='quote');
- return json({records:quotes,settings:settings?.data??DEFAULT_SETTINGS,settingsRevision:settings?.revision??0,report:buildReport(quotes,settings?.data??DEFAULT_SETTINGS)});
+ const effectiveSettings=validateSettings(settings?.data??DEFAULT_SETTINGS);return json({records:quotes,settings:effectiveSettings,settingsRevision:settings?.revision??0,report:buildReport(quotes,effectiveSettings)});
  }catch(e){return json({error:e instanceof Error?e.message:'تعذر تحميل السجل.'},503);}}
 export async function POST(request:Request){const user=owner(request);if(!user)return json({error:'تسجيل الدخول مطلوب.'},401);if(!sameOriginWrite(request))return json({error:'طلب غير مسموح.'},403);
  try{if(Number(request.headers.get('content-length')||0)>200000)return json({error:'البيانات أكبر من المسموح.'},413);
