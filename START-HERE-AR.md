@@ -1,17 +1,13 @@
-**إعداد Neon الجديد:** اتبع `NEON-SETUP.md` و`.env.example`. تعليمات Supabase أدناه تخص النسخة السابقة فقط. لا تحوّل الإنتاج قبل إنشاء الجداول ونقل أي بيانات سابقة واختبار الحفظ.
+# تشغيل GeoInTime على Vercel وNeon
 
-# GeoInTime — التشغيل على Vercel
+الموقع يعمل بـNext.js على Vercel. عروض الأسعار والتارجت محفوظة في Neon Postgres، ونسخ البروبوزل محفوظة في bucket خاص باسم `assets`.
 
-النسخة دي معمولة لـ Next.js/Vercel بدل Cloudflare Sites. كل تفاصيل الأسعار والبروبوزل زي ما هي، والبيانات بتتحفظ في Supabase مخصص، مش في ذاكرة Vercel المؤقتة.
+- مشروع Vercel: `geointime`، والفرع الرئيسي: `main`، وNode.js 22.x.
+- متغيرات الدخول والاتصال والتخزين موجودة أسماؤها في `.env.example`. القيم السرية تُضبط على Vercel فقط.
+- الإنتاج والـPreview يستخدمان فرعين منفصلين في Neon.
+- ملف تجهيز الجداول الصحيح: `db/migrations/001_records.sql`. ملف Supabase القديم مرجع تاريخي.
+- أوامر الفحص: `pnpm test` ثم `pnpm typecheck` ثم `pnpm build`.
+- الأمر `pnpm verify:neon` يختبر تسجيل الدخول والحفظ وتعارض النسخ وإنشاء PDF وتخزينه ثم تنزيله، وينظف بيانات الاختبار الخاصة به.
+- الدخول من `/login`. بعد الحفظ، أعد تحميل الصفحة وتأكد من ظهور العرض في السجل وتنزيل البروبوزل.
 
-1. افتح ريبو GitHub `mahmoud-ammar584/Geointime`، والأفضل تغيّر **Visibility** إلى Private قبل رفع الملفات لأن الكود فيه سياسات تسعير وتارجت.
-2. ارفع **محتويات المجلد ده نفسه إلى جذر الريبو**، مش المجلد الخارجي ولا ملف ZIP كملف وحيد.
-3. اعمل مشروع Supabase جديد مخصص للسيستم، ونفّذ ملف `supabase-schema.sql` في SQL Editor.
-4. اربط GitHub repo على Vercel وحدد Next.js و `main` و Node.js 22.x، واترك Root Directory افتراضي.
-5. ضيف الـ Environment Variables الموجودة في `.env.example` بعد تغيير القيم الوهمية لقيم حقيقية. لازم كلمتي المرور والمفتاح يفضلوا **Secrets** على Vercel فقط.
-6. اعمل Deploy، وادخل على `/login` وبعدها جرّب حفظ كوتيشن وتنزيل PDF.
-
-**ملحوظة:** بيانات الاستضافة القديمة لا تنتقل من ملفات الكود، لأن قاعدة البيانات الأصلية ليست ضمن ZIP.
-**ملحوظة ثانية:** لو مفاتيح Supabase أو كلمة المرور مش متضافة، الموقع هيمنع الدخول أو يرفض الحفظ بدل ما يفتح بلا حماية.
-
-لو حابب تدفع الملفات من الكمبيوتر بدل واجهة GitHub: فك ZIP، افتح Terminal داخل مجلد `GeoInTime-Commercial-Studio` وشغّل `bash scripts/push-to-github.sh` (Mac/Linux/Git Bash) أو `powershell -ExecutionPolicy Bypass -File scripts/push-to-github.ps1` (Windows PowerShell). لازم تكون عامل تسجيل دخول GitHub على Git Credential Manager.
+تفاصيل الإعداد في `README.md` و`NEON-SETUP.md`. تغيير قاعدة البيانات لا ينقل تلقائيًا بيانات أي استضافة قديمة.

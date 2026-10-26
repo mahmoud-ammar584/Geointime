@@ -14,7 +14,7 @@ function go(view){activeView=view;for(const name of ['quotation','ledger','targe
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));$('target-summary').addEventListener('click',()=>go('targets'));
 function draftData(){return {customer:$('customer').value.trim(),input:state(),status:'draft',dealType:'new',closingDate:null,activated:0,annualCommitment:state().cycle!=='monthly',eligibleExtra:false,baselineMonthly:0,share:100,renewalRate:null,payoutRule:'auto',approvalNote:'',commissionPaid:0,adjustment:0,adjustmentNote:'',notes:'',payments:[]};}
 async function saveCurrent(){if(saveBusy)return false;if(!latest){notify('استكمل بيانات السعر أولًا.',true);return false;}if(!$('customer').value.trim()){notify('اكتب اسم الشركة عشان نحفظ العرض باسمها.',true);$('customer').focus();return false;}saveBusy=true;try{
- if(!loaded)await refresh();const existing=db.records.find(r=>r.id===currentId);const data={...(existing?{...existing.data,customer:$('customer').value.trim(),input:state()}:draftData()),issuedDate:date(),customerImage:customerPNG($('customer').value.trim())};const id=currentId??uuid();const r=await api('POST',{id,kind:'quote',revision:currentRevision,data});currentId=id;currentRevision=r.revision;await refresh();notify('اتحفظ العرض. تقدر تتابع الإغلاق والتحصيل من السجل.');return true;
+ if(!loaded)await refresh();const existing=db.records.find(r=>r.id===currentId);const data={...(existing?{...existing.data,customer:$('customer').value.trim(),input:state()}:draftData()),issuedDate:existing?.data.issuedDate||date(),customerImage:customerPNG($('customer').value.trim())};const id=currentId??uuid();const r=await api('POST',{id,kind:'quote',revision:currentRevision,data});currentId=id;currentRevision=r.revision;await refresh();notify('اتحفظ العرض. تقدر تتابع الإغلاق والتحصيل من السجل.');return true;
  }catch(e){notify(e.message,true);return false;}finally{saveBusy=false;}}
 registerSaver(saveCurrent);$('save-quote').addEventListener('click',saveCurrent);window.addEventListener('quote-reset',()=>{currentId=null;currentRevision=0;});
 function report(){return db.report??buildReport(db.records,db.settings);}
@@ -55,7 +55,9 @@ $('proposal-pdf').addEventListener('click',async()=>{
 });
 
 $('proposal-download-link').addEventListener('click',e=>{if(e.currentTarget.dataset.signature!==JSON.stringify(state())+$('customer').value){e.preventDefault();e.currentTarget.hidden=true;notify('العرض اتغير؛ جهز البروپوزل من جديد قبل تنزيله.',true);}});
-document.getElementById('calculator-form').addEventListener('input',()=>{$('proposal-download-link').hidden=true;$('proposal-preview-link').hidden=true;});window.addEventListener('quote-reset',()=>$('proposal-download-link').hidden=true);
+document.getElementById('calculator-form').addEventListener('input',()=>{$('proposal-download-link').hidden=true;$('proposal-preview-link').hidden=true;});window.addEventListener('quote-reset',()=>{$('proposal-download-link').hidden=true;$('proposal-preview-link').hidden=true;});
+$('proposal-preview-link').addEventListener('click',e=>{if($('proposal-download-link').dataset.signature!==JSON.stringify(state())+$('customer').value){e.preventDefault();e.currentTarget.hidden=true;notify('العرض اتغير؛ جهز البروپوزل من جديد قبل معاينته.',true);}});
 
 
 document.getElementById("logout")?.addEventListener("click", async () => { await fetch("/api/auth/logout", {method:"POST",credentials:"same-origin"});window.location.replace("/login"); });
+

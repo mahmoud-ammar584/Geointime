@@ -1,68 +1,59 @@
-> Neon backend setup: see [NEON-SETUP.md](NEON-SETUP.md). The Supabase instructions below describe the previous backend and data migration source.
+# GeoInTime Commercial Studio
 
-# GeoInTime Commercial Studio — Vercel-ready source
+Private workspace for quotations, proposal PDFs, collections, commissions and targets.
 
-Private, single-owner workspace for pricing, quotations, proposal PDFs (using the supplied original design), CRM records, collections, commission reporting, quarter targets and conditional salary estimates.
+## Production architecture
 
-## Deployment architecture
+- Next.js 16 / Node.js 22 on Vercel.
+- Owner password login with signed, seven-day, HTTP-only, SameSite=Strict cookies. Static workspace assets and API routes require authentication.
+- Neon Postgres stores records in `geointime.records`. Server-only `pg` connections use the pooled `DATABASE_URL` and Vercel's `attachDatabasePool`.
+- Atomic revision checks prevent one session from overwriting another session's changes.
+- Generated proposal versions are archived in Neon's private `assets` bucket. Downloads pass through the authenticated API.
+- Pricing, commission policy, proposal design and bundled fonts are preserved.
 
-- **Next.js 16 (Node runtime)** on Vercel; no Cloudflare Worker, Vinext or D1 binding.
-- **Private password login** with a signed, seven-day, HTTP-only, SameSite=Strict cookie. The entire workspace and its static resources are protected by the Next.js `proxy.ts`; API routes independently check the signed session. Never trust client-supplied identity headers on Vercel.
-- **Dedicated Supabase Postgres** for cross-device persistent storage. Server uses PostgREST with service-role credential stored only in server-side environment variables. No Supabase credentials are shipped to the browser. Service-role key must not be stored in Git.
-- **Optimistic concurrency:** per-record revision checks, and revision-conditional updates. No first-run sample deals are inserted.
-- **PDF generation server-side**, from persisted, validated quotes; the supplied template and fonts are included in source.
-- **Noindex** private workspace; public GitHub repository metadata still remains public unless you change GitHub visibility.
+## Vercel settings
 
-## One-time setup
+Use the existing `geointime` project, framework Next.js, root directory default, Node.js 22.x, install `pnpm install --frozen-lockfile`, build `pnpm build`.
 
-1. Create a **new dedicated Supabase project** (do not reuse BNormalized/Sarih databases). In Supabase SQL Editor, execute `supabase-schema.sql` once.
-2. In **Vercel**, import this GitHub repository with framework preset `Next.js`, Root Directory `.`, build `pnpm build`, output framework default. Node.js **22.x**. The default production branch is `main`.
-3. In Vercel → Project → Settings → Environment Variables add the **four required secrets/settings** from `.env.example` (for Production and Preview, or only the environments you intend to use):
-   - `APP_PASSWORD`: unique, high-entropy **16+ character** owner-only password, not reused on other websites.
-   - `SESSION_SECRET`: independent random **32+ character** value. Rotating it signs out all sessions.
-   - `SUPABASE_URL`: the new project's `https://<ref>.supabase.co` base URL.
-   - `SUPABASE_SECRET_KEY`: **secret** `sb_secret_...` credential from the new Supabase project. **Never prefix with `NEXT_PUBLIC_` or share it with the client.**
-4. Deploy, open `/login`, sign in, create a test quotation, reload the page, export PDF, and inspect quota/commission views. Confirm that visiting `/studio.html` and `/api/records` without a session redirects to login/returns HTTP 401.
+Configure these server-only variables in Vercel; never commit their values:
 
-To generate secrets locally (paste generated values directly into Vercel; never commit them):
+| Variable | Purpose |
+| --- | --- |
+| APP_PASSWORD | Owner password, at least 10 characters |
+| SESSION_SECRET | Independent random signing secret, at least 32 characters |
+| DATABASE_URL | Pooled Neon Postgres connection |
+| DATABASE_URL_UNPOOLED | Direct Neon connection for migrations |
+| AWS_ENDPOINT_URL_S3 | Storage endpoint for the same Neon branch |
+| AWS_REGION | Neon storage region |
+| AWS_ACCESS_KEY_ID | Branch credential with storage read/write access |
+| AWS_SECRET_ACCESS_KEY | Corresponding S3 signing secret |
 
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+Production and Preview use separate Neon branches and credentials. Keep Vercel deployment protection on Preview; production uses the app's password login.
+
+## Database and local verification
+
+After linking the intended Vercel project and configuring environment variables:
+
+```sh
+corepack pnpm install --frozen-lockfile
+# Supply a development .env.local using .env.example as the key reference.
+corepack pnpm db:migrate
+corepack pnpm test
+corepack pnpm typecheck
+corepack pnpm build
+corepack pnpm verify:neon
 ```
 
-Use **different** generated values for `APP_PASSWORD` and `SESSION_SECRET`.
+The versioned migration is `db/migrations/001_records.sql`. It creates only the private `geointime` schema, table and index. It is safe to rerun and does not delete existing records.
 
-## Run locally
+`verify:neon` starts the production build against the configured services, logs in, creates a uniquely named test quote, checks persistence and revision conflicts, generates and archives a PDF, verifies the second download, and removes only its own test row/object.
 
-```bash
-corepack enable
-pnpm install --frozen-lockfile
-cp .env.example .env.local
-# Fill .env.local with dev credentials and a dedicated test database.
-pnpm dev
-```
+## Production smoke test
 
-For tests (tests don't require running database):
+Open `/login`, sign in, save a quotation, reload, edit the quote, and generate/download its PDF. Check the ledger and targets. Anonymous `/api/records` and `/api/proposal` must return 401, while the workspace redirects to login. Cross-origin writes must return 403.
 
-```bash
-node --test tests/*.test.mjs
-pnpm exec tsc --noEmit
-pnpm build
-```
+## Data continuity
 
-## Product policy preserved
+The former Supabase implementation was replaced by Neon. `supabase-schema.sql` remains only as a historical reference; it is not the Neon migration. Existing data from another host is not part of this repository and requires a separate export/import if present. Never point Preview deployments at production data.
 
-- Three subscription tiers: 30–49, 50–99, 100+ billed employees. Essentials, Essentials + Operations and Full.
-- Annual 0% uplift, quarterly/semiannual 3%, monthly 8%.
-- Separate implementation, optional Locator hardware (editable starting reference EGP 2,700 per device), extras, commercial discount approval and tax assumptions.
-- Discount never silently applies to one-off hardware and implementation. Quotation data and computed snapshots are validated server-side.
-- Saved quotes and closing/monthly reports preserve commissions, collection entries, salary retroactivity and user-editable quarter targets.
-- The PDF uses the actual supplied EGY Sales-Proposal design. Visual output should be rechecked after deployment, especially customer name rendering.
-- Commercial policy ambiguity is not magically resolved: for some semiannual commission and complex exception rules, management confirmation is required.
-
-## Data/security considerations
-
-- This app is not multi-user SaaS; it is one-password owner-only. Disable public GitHub repo visibility if you don't want source defaults (e.g. sales targets and commercial rates) visible publicly.
-- Backup the dedicated Supabase database regularly. The ZIP/Git source **does not contain** the hosted database and does not automatically migrate records from the previous hosting database.
-- The Vercel project will show an explicit storage error until the Supabase env variables and schema are configured. It will not silently use ephemeral memory or browser localStorage.
-- For production, enable Vercel observability and consider upstream rate limiting for `/api/auth/login` (a long randomly generated password is mandatory; no distributed failed-login limiter is implemented).
+Keep database backups and retain original commercial approval notes; the app does not invent approval for custom pricing, renewal rates or uncertain commission rules.
