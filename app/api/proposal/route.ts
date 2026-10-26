@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readProposal, writeProposal } from '../../../lib/server/storage.mjs';
 import { ownerFromRequest } from '../../../lib/server/session.mjs';
 import { getForOwner } from '../../../lib/server/database.mjs';
 // @ts-ignore vendored PDF toolkit
@@ -17,6 +19,9 @@ export async function GET(request:Request){
  const id=new URL(request.url).searchParams.get('id');if(!id||!/^[a-zA-Z0-9_-]{1,80}$/.test(id))return new Response('معرّف العرض مطلوب.',{status:400});
  try{const row:any=await getForOwner(owner,id);if(!row||row.kind!=='quote')return new Response('العرض غير موجود.',{status:404});
  const d=row.data,issued=d.issuedDate||row.created_at.slice(0,10),number='GIT-'+issued.replaceAll('-','')+'-'+id.slice(0,6).toUpperCase();
- const bytes=await generateProposal(PDFLib,{templateBytes:decode(assets.template),fontBytes:decode(assets.font),boldBytes:decode(assets.bold),semiBytes:decode(assets.semi),fontkit,quote:d.quote,approvalRecorded:!!d.approvalNote?.trim(),customer:d.customer,customerImage:d.customerImage||undefined,number,issuedDate:issued,expiresAt:expiry(issued)});
- return new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':(new URL(request.url).searchParams.get('preview')==='1'?'inline':'attachment')+'; filename="'+number+'.pdf"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+ const key='proposals/'+encodeURIComponent(owner)+'/'+id+'/'+createHash('sha256').update(JSON.stringify({revision:row.revision,data:d,issued,format:'geointime-pdf-v1'})).digest('hex')+'.pdf';
+ let bytes=await readProposal(key);
+ const source=bytes?'archive':'generated';
+ if(!bytes){bytes=await generateProposal(PDFLib,{templateBytes:decode(assets.template),fontBytes:decode(assets.font),boldBytes:decode(assets.bold),semiBytes:decode(assets.semi),fontkit,quote:d.quote,approvalRecorded:!!d.approvalNote?.trim(),customer:d.customer,customerImage:d.customerImage||undefined,number,issuedDate:issued,expiresAt:expiry(issued)});await writeProposal(key,bytes);}
+ return new Response(bytes,{headers:{'X-GeoInTime-PDF-Source':source,'Content-Type':'application/pdf','Content-Disposition':(new URL(request.url).searchParams.get('preview')==='1'?'inline':'attachment')+'; filename="'+number+'.pdf"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
  }catch{return new Response('تعذر إنشاء البروپوزل؛ راجع البيانات وقاعدة التخزين.',{status:503});}}

@@ -1,3 +1,5 @@
+> Neon backend setup: see [NEON-SETUP.md](NEON-SETUP.md). The Supabase instructions below describe the previous backend and data migration source.
+
 # GeoInTime Commercial Studio — Vercel-ready source
 
 Private, single-owner workspace for pricing, quotations, proposal PDFs (using the supplied original design), CRM records, collections, commission reporting, quarter targets and conditional salary estimates.

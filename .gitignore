@@ -45,5 +45,6 @@ yarn-error.log*
 # Document required variable names without publishing real secrets
 !.env.example
 
-# Reconstructed byte-for-byte by prebuild from the bundled template modules
+/.neon
+
 /public/proposal-template.pdf
