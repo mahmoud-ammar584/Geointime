@@ -19,7 +19,7 @@ const fixtures=[
  [1,30,60,80,75,null],[29,30,60,80,75,null],[30,30,60,80,75,5000],
  [49,49,60,80,75,5000],[50,50,55,73,69,5000],[51,51,55,73,69,7500],
  [99,99,55,73,69,7500],[100,100,50,65,62,7500],[101,101,50,65,62,10000],
- [250,250,50,65,62,10000],[251,251,50,65,62,15000],[500,500,50,65,62,null],
+ [250,250,50,65,62,10000],[251,251,50,65,62,15000],[500,500,50,65,62,15000],
  [501,501,50,65,62,null],
 ];
 for(const [employees,billed,essentials,combined,full,implementation] of fixtures){
@@ -151,3 +151,4 @@ test('All plans/cycles: invoice sums reconcile and amounts are integer piastres'
 });
 
 test('Locator quantity and editable unit price add once and reconcile with tax',()=>{const q=calc({hardwareQty:2,hardwareUnitPrice:2700,taxMode:'specified',taxRate:14});assert.equal(q.hardwareTotal,540000);assert.equal(q.firstYearSubtotal,6258000);assert.equal(q.firstYearTotal,7134120);assert.equal(calc({hardwareQty:0}).hardwareTotal,0);assert.throws(()=>calc({hardwareQty:1.5}));assert.throws(()=>calc({hardwareQty:1,hardwareUnitPrice:0}));});
+

@@ -2,7 +2,7 @@ import { ownerFromRequest } from '../../../lib/server/session.mjs';
 import { sameOriginWrite } from '../../../lib/access.mjs';
 import { DatabaseError,listForOwner,getForOwner,insertForOwner,updateForOwner } from '../../../lib/server/database.mjs';
 // @ts-ignore shared dependency-free model
-import { calculate } from '../../../lib/calculator.mjs';
+import { calculate,CALCULATION_VERSION } from '../../../lib/calculator.mjs';
 // @ts-ignore
 import {validateRecord,validateSettings,DEFAULT_SETTINGS,buildReport} from '../../../lib/business.mjs';
 export const dynamic='force-dynamic';
@@ -25,7 +25,8 @@ export async function POST(request:Request){const user=owner(request);if(!user)r
  if(existing&&existing.kind!==body.kind)return json({error:'نوع السجل لا يمكن تغييره.'},409);
  let data:any;if(body.kind==='settings')data=validateSettings(body.data);
  else {data=validateRecord(body.data);const prev=existing?.data??null;
- const quote=prev&&JSON.stringify(prev.input)===JSON.stringify(data.input)?prev.quote:calculate(data.input);data.quote=quote;data.policyVersion='2026-10-25';
+ if(prev&&data.input.taxMode===undefined)data.input={...data.input,taxMode:prev.quote.taxRate===null?'unknown':'specified',taxRate:prev.quote.taxRate??undefined};
+ const quote=prev&&prev.quote.calculationVersion===CALCULATION_VERSION&&JSON.stringify(prev.input)===JSON.stringify(data.input)?prev.quote:calculate(data.input);data.quote=quote;data.policyVersion='2026-10-25';
  if(['sent','won'].includes(data.status)&&(quote.implementation===null||((quote.approval.needsApproval||quote.customRequired)&&!data.approvalNote.trim())))throw Error('استكمل رسوم التهيئة واعتماد الاستثناء قبل إرسال العرض أو إغلاقه.');
  if((data.payoutRule!=='auto'||data.renewalRate!==null)&&!data.approvalNote.trim())throw Error('دوّن اعتماد قاعدة الصرف أو نسبة التجديد الخاصة.');
  if(data.adjustment&&!data.adjustmentNote.trim())throw Error('اكتب سبب تسوية العمولة.');if(data.share!==100&&!data.approvalNote.trim())throw Error('تقسيم العمولة يحتاج توثيق اعتماد الإدارة.');

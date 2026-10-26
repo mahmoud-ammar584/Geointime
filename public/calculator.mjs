@@ -1,4 +1,5 @@
 // GeoInTime 2026 commercial policy. All monetary outputs are integer piastres.
+export const CALCULATION_VERSION="2026-10-26-billing-v2";
 export const POLICY = Object.freeze({
   source: 'GeoInTime_Pricing_Discount_Commercial_Policy_2026(1).pdf',
   tiers: [
@@ -48,8 +49,9 @@ export function calculate(input) {
   if (!Object.hasOwn(POLICY.plans, input.plan)) throw new Error('اختر باقة صحيحة.');
   if (!Object.hasOwn(POLICY.cycles, input.cycle)) throw new Error('اختر دورية دفع صحيحة.');
   const discount = number(input.discount ?? 0, 'الخصم', { max: 100 });
-  if (!['unknown', 'specified'].includes(input.taxMode ?? 'unknown')) throw new Error('اختر حالة الضريبة.');
-  const taxRate = input.taxMode === 'specified' ? number(input.taxRate, 'نسبة الضريبة', { max: 100 }) : null;
+  const taxMode = input.taxMode ?? 'egypt';
+  if (!['egypt', 'none', 'unknown', 'specified'].includes(taxMode)) throw new Error('اختر حالة الضريبة.');
+  const taxRate = taxMode === 'egypt' ? 14 : taxMode === 'none' ? 0 : taxMode === 'specified' ? number(input.taxRate, 'نسبة الضريبة', { max: 100 }) : null;
   const extraAmount = number(input.extraAmount, 'قيمة الإضافة', { optional: true });
   const otherOnce = money(number(input.otherOnce, 'الرسوم الأخرى لمرة واحدة', { optional: true }));
   const hardwareQty=number(input.hardwareQty??0,'عدد أجهزة Locator',{integer:true,max:1000000});
@@ -73,7 +75,7 @@ export function calculate(input) {
   const extrasAnnual = extraCadence === 'once' ? 0 : extraUnit * (extraCadence === 'monthly' ? 12 : 1);
   const extrasOnce = (extraCadence === 'once' ? extraUnit : 0) + otherOnce + hardwareTotal;
   if (![extraUnit, extrasAnnual, extrasOnce, coreMonthly * 12 + extrasAnnual + extrasOnce].every(Number.isSafeInteger)) throw new Error('القيم تتجاوز الحد الآمن للحساب؛ راجع قيمة الإضافة وعدد الموظفين.');
-  const customRequired = employees < 30 || billedEmployees >= 500 || input.complex === true;
+  const customRequired = employees < 30 || billedEmployees > 500 || input.complex === true;
   let implementation = implementationFor(billedEmployees);
   if (customRequired) implementation = input.customImplementation === '' || input.customImplementation === undefined || input.customImplementation === null ? null : money(number(input.customImplementation, 'رسوم التهيئة الخاصة', { min: .01 }));
   const invoices = 12 / cycle.months;
@@ -98,7 +100,7 @@ export function calculate(input) {
   if (extraAmount > 0 || otherOnce > 0) warnings.push('الإضافة مدخلة يدويًا؛ يجب توثيق نطاقها وسعرها. لا يُطبق عليها خصم الباقة أو زيادة دورية الدفع.');
   if(hardwareQty>0) warnings.push('سعر جهاز Locator مدخل يدويًا، يبدأ من 2,700 ج.م للوحدة كتقدير حسب توضيحك؛ الأجهزة بند مستقل غير مؤهل للعمولة.');
   if (taxRate === null) warnings.push('نسبة الضريبة غير محددة: جميع المجاميع قبل الضريبة، وليست المبلغ النهائي للفاتورة.');
-  return { employees, billedEmployees, tier: `${tier.from}–${tier.to === Infinity ? 'أكثر' : tier.to}`, plan: input.plan, planName: POLICY.plans[input.plan], cycle: input.cycle, cycleLabel: cycle.label, cycleMonths: cycle.months, upliftRate: cycle.uplift, baseRate, baseMonthly, upliftMonthly, beforeDiscountMonthly, discount, discountMonthly, coreMonthly, extrasAnnual, extrasOnce, implementation, customRequired, taxRate, approval, schedule, warnings,
+  return { calculationVersion:CALCULATION_VERSION, employees, billedEmployees, tier: `${tier.from}–${tier.to === Infinity ? 'أكثر' : tier.to}`, plan: input.plan, planName: POLICY.plans[input.plan], cycle: input.cycle, cycleLabel: cycle.label, cycleMonths: cycle.months, upliftRate: cycle.uplift, baseRate, baseMonthly, upliftMonthly, beforeDiscountMonthly, discount, discountMonthly, coreMonthly, extrasAnnual, extrasOnce, implementation, customRequired, taxMode, taxRate, approval, schedule, warnings,
     recurringAnnual: coreMonthly * 12 + extrasAnnual,
     firstYearSubtotal: implementation === null ? null : sum('knownSubtotal'),
     knownFirstYearSubtotal: sum('knownSubtotal'),
@@ -107,4 +109,13 @@ export function calculate(input) {
     fullSavingAnnual: money((tier.essentials + tier.operations - tier.full) * billedEmployees * 12),
     extraAmount, extraBasis, extraCadence, hardwareQty, hardwareUnitPrice, hardwareTotal,
   };
+}
+
+
+export function renewalFor(quote,startDate){
+ const date=addMonths(startDate,quote.cycleMonths);
+ const next=quote.schedule.length>1?quote.schedule[1]:{core:quote.coreMonthly*quote.cycleMonths,extra:quote.extrasAnnual};
+ const subtotal=next.core+next.extra;
+ const tax=quote.taxRate===null?null:round(subtotal*quote.taxRate/100);
+ return {date,subtotal,tax,total:tax===null?null:subtotal+tax,implementation:0,once:0,anniversaryDate:addMonths(startDate,12)};
 }
