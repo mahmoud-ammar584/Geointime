@@ -30,8 +30,11 @@ export function validateRecord(data){
  const activationDate=validDate(data.activationDate)?data.activationDate:null;
  const refunds=(data.refunds??[]).map(p=>{if(!validDate(p.date)||!String(p.note||'').trim())throw Error('تاريخ وسبب الاسترداد مطلوبان.');return {id:String(p.id).slice(0,80),date:p.date,amount:finite(p.amount,'صافي الاشتراك المسترد',.01),note:String(p.note).slice(0,500)};});
  if(refunds.length>500||new Set(refunds.map(p=>p.id)).size!==refunds.length)throw Error('الاستردادات مكررة أو كثيرة.');
+ const commissionPayouts=(data.commissionPayouts??[]).map(p=>{if(!validDate(p.date))throw Error('تاريخ قبض العمولة غير صحيح.');return {id:String(p.id).slice(0,80),date:p.date,amount:finite(p.amount,'عمولة مقبوضة',.01),note:String(p.note||'').slice(0,500)};});
+ if(commissionPayouts.length>500||new Set(commissionPayouts.map(p=>p.id)).size!==commissionPayouts.length)throw Error('دفعات قبض العمولة مكررة أو كثيرة.');
+ if(data.adjustmentDate&&!validDate(data.adjustmentDate))throw Error('تاريخ تسوية العمولة غير صحيح.');
  const customerImage=String(data.customerImage||'');if(customerImage&&(!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(customerImage)||customerImage.length>100000))throw Error('صورة اسم العميل غير صحيحة.');
- return {context,activationDate,refunds,commissionReview:reviewAnswers(data.commissionReview),customer,customerImage,issuedDate:validDate(data.issuedDate)?data.issuedDate:null,input:data.input,status:data.status,dealType:data.dealType??'new',closingDate,activated,annualCommitment:data.annualCommitment===true,eligibleExtra:data.eligibleExtra===true,baselineMonthly:finite(data.baselineMonthly??0,'الاشتراك السابق'),share:finite(data.share??100,'نصيبك',0,100),renewalRate:data.renewalRate==null||data.renewalRate===''?null:finite(data.renewalRate,'عمولة التجديد المعتمدة',0,100),payoutRule:data.payoutRule??'auto',approvalNote:String(data.approvalNote||'').slice(0,1000),commissionPaid:finite(data.commissionPaid??0,'العمولة المصروفة'),adjustment:finite(data.adjustment??0,'تسوية العمولة',-1e10,1e10),adjustmentNote:String(data.adjustmentNote||'').slice(0,1000),notes:String(data.notes||'').slice(0,3000),lostNotes:String(data.lostNotes||'').trim().slice(0,3000),payments};
+ return {context,activationDate,refunds,commissionPayouts,adjustmentDate:data.adjustmentDate||null,commissionReview:reviewAnswers(data.commissionReview),customer,customerImage,issuedDate:validDate(data.issuedDate)?data.issuedDate:null,input:data.input,status:data.status,dealType:data.dealType??'new',closingDate,activated,annualCommitment:data.annualCommitment===true,eligibleExtra:data.eligibleExtra===true,baselineMonthly:finite(data.baselineMonthly??0,'الاشتراك السابق'),share:finite(data.share??100,'نصيبك',0,100),renewalRate:data.renewalRate==null||data.renewalRate===''?null:finite(data.renewalRate,'عمولة التجديد المعتمدة',0,100),payoutRule:data.payoutRule??'auto',approvalNote:String(data.approvalNote||'').slice(0,1000),commissionPaid:finite(data.commissionPaid??0,'العمولة المصروفة'),adjustment:finite(data.adjustment??0,'تسوية العمولة',-1e10,1e10),adjustmentNote:String(data.adjustmentNote||'').slice(0,1000),notes:String(data.notes||'').slice(0,3000),lostNotes:String(data.lostNotes||'').trim().slice(0,3000),payments};
 }
 export function marginalCommission(value,employees,prior,target,rules=planRules()){
  const edges=[...rules.thresholds.map(p=>target*p/100),Infinity],rates=rules.rates;
@@ -40,9 +43,10 @@ export function marginalCommission(value,employees,prior,target,rules=planRules(
  for(let i=0;i<edges.length&&left>0;i++){const n=Math.min(left,Math.max(0,edges[i]-cursor));if(n<=0)continue;const next=allocated+n;const part=Math.round(value*next/employees)-Math.round(value*allocated/employees);const commission=Math.round(part*rates[i]/100);bands.push({employees:n,rate:rates[i],value:part,commission});cursor+=n;left-=n;allocated=next;}
  return {amount:bands.reduce((s,b)=>s+b.commission,0),bands,provisional:bands.some(b=>b.rate!==rates[0])};
 }
+export function nextPayrollMonth(month){return addMonths(month+'-01',1).slice(0,7);}
 export function buildReport(records,settings=DEFAULT_SETTINGS){
  const settingsOK=validateSettings(settings),won=records.filter(r=>r.data.status==='won');
- const activation=r=>r.data.activationDate||r.data.closingDate;
+ const activation=r=>r.data.closingDate;
  const ordered=[...won].sort((a,b)=>activation(a).localeCompare(activation(b))||a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
  const plans=settingsOK.plans.map(p=>{const activated=won.filter(r=>r.data.dealType==='new'&&activation(r)>=p.start&&activation(r)<=p.end).reduce((s,r)=>s+r.data.activated,0);const achieved=p.opening+activated;return {...p,achieved,remaining:Math.max(0,p.target-achieved),over:Math.max(0,achieved-p.target),percent:achieved/p.target*100,hit:achieved>=p.target};});
  const seen=[];
@@ -60,31 +64,64 @@ export function buildReport(records,settings=DEFAULT_SETTINGS){
    else if(review.contract==='annual'&&['monthly','quarterly'].includes(cycle))rule='installments';
    else if(review.contract==='rolling'&&cycle==='monthly')rule='rolling';
   }
-  if(d.dealType==='expansion'){amount=Math.round(eligible*rules.expansionRate/100);due=Math.round(collected*rules.expansionRate/100);note=rules.expansionRate+'% من صافي تحصيل الزيادة فقط، في حدود اشتراك السنة المؤهل.';}
-  else if(d.dealType==='renewal'){if(d.renewalRate!==null){amount=Math.round(eligible*d.renewalRate/100);due=Math.round(collected*d.renewalRate/100);note='نسبة التجديد المعتمدة × صافي التحصيل المؤهل؛ بدون افتراض سلفة.';}else note='نسبة وقاعدة التجديد غير محددتين بالملف.';}
+  if(d.dealType==='expansion'){amount=Math.round(eligible*rules.expansionRate/100);note=rules.expansionRate+'% من صافي تحصيل الزيادة فقط، في حدود اشتراك السنة المؤهل.';}
+  else if(d.dealType==='renewal'){if(d.renewalRate!==null){amount=Math.round(eligible*d.renewalRate/100);note='نسبة التجديد المعتمدة × صافي التحصيل المؤهل.';}else note='نسبة وقاعدة التجديد غير محددتين بالملف.';}
   else if(plan){
    const result=marginalCommission(eligible,d.activated,before,plan.target,rules);amount=result.amount;bands=result.bands;provisional=result.provisional;
-   if(rule==='annual'){due=collected>=eligible&&eligible>0?amount:0;note='صرف كامل العمولة بعد تحصيل الاشتراك السنوي المؤهل كاملًا.';}
-   else if(rule==='installments'){
-    const first=eligible*cycleMonths/12,advance=rules.installmentAdvance/100;
-    due=collected>=first&&first>0?Math.round(amount*(advance+(1-advance)*Math.min(1,(collected-first)/(eligible-first||1)))):0;
-    note=rules.installmentAdvance+'% بعد اكتمال أول دفعة؛ الباقي بنسبة صافي التحصيل اللاحق.';
-   }else if(rule==='rolling'){
-    const monthly=eligible/12,boundary=addMonths(d.input.startDate,rules.rollingAdvanceMonths);
-    const after=Math.max(0,d.payments.filter(p=>p.date>=boundary).reduce((s,p)=>s+Math.round(p.amount*100),0)-(d.refunds??[]).reduce((s,p)=>s+Math.round(p.amount*100),0));
-    due=collected>=monthly&&monthly>0?Math.min(amount,Math.round((monthly*rules.rollingAdvanceMonths+Math.min(after,monthly*(12-rules.rollingAdvanceMonths)))*(amount/(eligible||1)))):0;
-    note='سلفة '+rules.rollingAdvanceMonths+' أشهر بعد اكتمال أول شهر؛ ثم التحصيل من الشهر '+(rules.rollingAdvanceMonths+1)+'. التوقع السنوي ليس استحقاقًا مضمونًا.';
-   }else note='قاعدة الصرف غير محسومة؛ حدّد الالتزام والدورية أو سجّل الاستثناء المعتمد.';
+   note=rule==='annual'?'صرف كامل العمولة بعد تحصيل الاشتراك السنوي المؤهل كاملًا.':rule==='installments'?rules.installmentAdvance+'% بعد اكتمال أول دفعة؛ الباقي بنسبة صافي التحصيل اللاحق.':rule==='rolling'?'سلفة '+rules.rollingAdvanceMonths+' أشهر بعد اكتمال أول شهر؛ ثم التحصيل من الشهر '+(rules.rollingAdvanceMonths+1)+'.':'قاعدة الصرف تحتاج اعتمادًا.';
   }else note='تاريخ الإغلاق خارج فترات التارجت.';
+  // One entitlement formula for lifetime totals and each dated monthly checkpoint.
+  const entitlement=(payments,refunds)=>{
+   const refund=refunds.reduce((s,p)=>s+Math.round(p.amount*100),0);
+   const collected=Math.min(eligible,Math.max(0,payments.reduce((s,p)=>s+Math.round(p.amount*100),0)-refund));
+   if(amount===null)return null;
+   if(d.dealType==='expansion')return Math.round(collected*rules.expansionRate/100);
+   if(d.dealType==='renewal')return Math.round(collected*d.renewalRate/100);
+   if(rule==='annual')return collected>=eligible&&eligible>0?amount:0;
+   if(rule==='installments'){
+    const first=eligible*cycleMonths/12,advance=rules.installmentAdvance/100;
+    return collected>=first&&first>0?Math.round(amount*(advance+(1-advance)*Math.min(1,(collected-first)/(eligible-first||1)))):0;
+   }
+   if(rule==='rolling'){
+    const monthly=eligible/12,boundary=addMonths(d.input.startDate,rules.rollingAdvanceMonths);
+    const after=Math.max(0,payments.filter(p=>p.date>=boundary).reduce((s,p)=>s+Math.round(p.amount*100),0)-refund);
+    return collected>=monthly&&monthly>0?Math.min(amount,Math.round((monthly*rules.rollingAdvanceMonths+Math.min(after,monthly*(12-rules.rollingAdvanceMonths)))*(amount/(eligible||1)))):0;
+   }
+   return null;
+  };
+  due=entitlement(d.payments,d.refunds??[]);
   const issues=commissionIssues(d,q,plan?{...plan,accelerated:provisional}:null,settingsOK.allocationConfirmed);
   if(due===null&&!issues.length)issues.push('قاعدة الصرف تحتاج اعتمادًا قبل تحديد المستحق.');
-  const share=d.share/100;amount=amount===null?null:Math.round(amount*share);
-  due=issues.length||due===null?null:Math.round(due*share)+Math.round(d.adjustment*100);
+  const share=d.share/100,closedMonth=d.closingDate.slice(0,7),payrollMonth=nextPayrollMonth(closedMonth);
+  const adjustment=Math.round(d.adjustment*100),datedAdjustment=d.adjustmentDate?adjustment:0;
+  // Map changes in collection eligibility into the following month's payroll.
+  // Pre-close collections cannot create a payroll month before close + 1.
+  const sourceMonths=[...new Set([closedMonth,...d.payments.map(p=>p.date.slice(0,7)),...(d.refunds??[]).map(p=>p.date.slice(0,7)),...(d.adjustmentDate?[d.adjustmentDate.slice(0,7)]:[])].map(m=>m<closedMonth?closedMonth:m))].sort();
+  let previous=0;
+  const payroll=sourceMonths.map(sourceMonth=>{
+   const through=p=>p.date.slice(0,7)<=sourceMonth;
+   const raw=entitlement(d.payments.filter(through),(d.refunds??[]).filter(through));
+   const cumulative=issues.length||raw===null?null:Math.round(raw*share)+(d.adjustmentDate&&through({date:d.adjustmentDate})?datedAdjustment:0);
+   const delta=cumulative===null?null:cumulative-previous;if(cumulative!==null)previous=cumulative;
+   return {month:nextPayrollMonth(sourceMonth),sourceMonth,due:delta};
+  }).filter(p=>p.month===payrollMonth||p.due===null||p.due!==0);
+  amount=amount===null?null:Math.round(amount*share);
+  due=issues.length||due===null?null:Math.round(due*share)+adjustment;
+  const legacyPaid=Math.round(d.commissionPaid*100),paid=legacyPaid+(d.commissionPayouts??[]).reduce((s,p)=>s+Math.round(p.amount*100),0);
   seen.push(record);
-  return {...record,eligible,collected:col,refunded,annualCommission:amount,due,paid:Math.round(d.commissionPaid*100),remaining:due===null?null:due-Math.round(d.commissionPaid*100),bands,provisional:issues.length>0,reviewIssues:issues,rule,note,planId:plan?.id,prior:before,closedMonth:d.closingDate.slice(0,7)};
+  return {...record,eligible,collected:col,refunded,annualCommission:amount,due,paid,legacyPaid,undatedAdjustment:d.adjustmentDate?0:adjustment,remaining:due===null?null:due-paid,bands,provisional:issues.length>0,reviewIssues:issues,rule,note,planId:plan?.id,prior:before,closedMonth,payrollMonth,payroll};
+
  });
  const months=Object.values(deals.reduce((map,d)=>{const m=map[d.closedMonth]??={month:d.closedMonth,count:0,value:0,annualCommission:0,due:0,paid:0,unresolved:0,activated:0,deals:[]};m.count++;m.value+=d.data.quote.recurringAnnual;m.annualCommission+=d.annualCommission??0;m.due+=d.due??0;m.paid+=d.paid;m.unresolved+=d.due===null?1:0;m.activated+=d.data.dealType==='new'?d.data.activated:0;m.deals.push(d);return map;},{})).sort((a,b)=>b.month.localeCompare(a.month));
- return {deals,months,plans,compensation:compensationReport(settingsOK,plans)};
+ const payrollMap={};
+ const payrollRow=month=>payrollMap[month]??=( {month,due:0,paid:0,unresolved:0,deals:[],payouts:[]} );
+ for(const deal of deals){
+  for(const entry of deal.payroll){const m=payrollRow(entry.month);m.due+=entry.due??0;m.unresolved+=entry.due===null?1:0;m.deals.push({id:deal.id,customer:deal.data.customer,closedMonth:deal.closedMonth,...entry});}
+  for(const p of deal.data.commissionPayouts??[]){const m=payrollRow(p.date.slice(0,7));m.paid+=Math.round(p.amount*100);m.payouts.push({id:deal.id,customer:deal.data.customer,...p});}
+ }
+ let balance=0;
+ const payrollMonths=Object.values(payrollMap).sort((a,b)=>a.month.localeCompare(b.month)).map(m=>({...m,balance:balance+=m.due-m.paid}));
+ return {deals,months,payrollMonths,undatedPaid:deals.reduce((s,d)=>s+d.legacyPaid,0),undatedAdjustment:deals.reduce((s,d)=>s+d.undatedAdjustment,0),hasUndatedAdjustment:deals.some(d=>d.undatedAdjustment!==0),plans,compensation:compensationReport(settingsOK,plans)};
 }
 
 

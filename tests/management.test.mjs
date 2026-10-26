@@ -48,10 +48,10 @@ test('Acceleration above the base band remains pending until the value allocatio
  const pending=buildReport([record('cross')],settings).deals[0];assert.equal(pending.due,null);
  settings.allocationConfirmed=true;const confirmed=buildReport([record('cross')],settings).deals[0];assert.ok(confirmed.due>397440);
 });
-test('Activation date controls target progress independently of close date',()=>{
+test('Close quarter retains activated employees independently of activation and payroll dates',()=>{
  const settings=structuredClone(DEFAULT_SETTINGS);settings.plans.push({id:'q1',label:'2027 Q1',start:'2027-01-01',end:'2027-03-31',target:200,opening:0});
  const r=buildReport([record('late-activation',{activationDate:'2027-01-02'})],settings);
- assert.equal(r.plans[0].achieved,0);assert.equal(r.plans[1].achieved,60);assert.equal(r.deals[0].due,null);
+ assert.equal(r.plans[0].achieved,60);assert.equal(r.plans[1].achieved,0);assert.equal(r.deals[0].due,397440);
 });
 test('The 21,000 salary promise does not become payable merely because a later quarter succeeds',()=>{
  const settings=structuredClone(DEFAULT_SETTINGS);settings.plans.push({id:'q1',label:'2027 Q1',start:'2027-01-01',end:'2027-03-31',target:10,opening:10});

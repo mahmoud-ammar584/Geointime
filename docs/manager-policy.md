@@ -39,7 +39,9 @@ Renewal rates, semiannual payout and other contractual exceptions are not invent
 
 ## Periods and compensation
 
-Target progress uses activated new-customer employees and activation dates. Commission uses the closing period's configured rules. Cross-period activation is flagged for a period-allocation decision rather than silently assuming eligibility.
+The owner clarified that a deal closed in October counts its actual activated new-customer employees toward the closing quarter, and its commission is scheduled in November. December closes remain in Q4 even though payroll is January. Commission bands accumulate across the closing quarter and never reset each payroll month. Activation dates remain evidence, but do not move employees to another quarter.
+
+The payroll report is separate from the cumulative close-month analysis. At each collection/refund month-end, the change in eligible commission is scheduled for the next month, never earlier than close + 1. This preserves advance rules, rounds cumulative entitlement before taking differences, and makes refunds negative adjustments without paying previous stages twice. Incomplete questions stay unresolved. Actual receipt of commission requires a dated payout entry; scheduled amounts are never automatically marked paid. Legacy undated paid amounts and manual adjustments are preserved and shown separately until a date is supplied. Dated manual adjustments enter the following month's payroll.
 
 Changing a saved quarter's rules recalculates that quarter; the editor warns about this. Changed standard rules require a documented approval note. New quarters do not copy a salary promise.
 
@@ -52,3 +54,4 @@ Sales Plan sections 7–8: open deals should have real customer pain, a relevant
 Cost of Inaction framework pages 4, 7–9 and 14–15: use customer-supplied measured/estimated evidence, avoid overlapping benefits, and leave strategic value qualitative. A scenario compares conservative addressable annual value with the first-year subtotal (subscription and one-time investment counted once). ROI and payback are scenarios, not guarantees.
 
 Messaging framework pages 9, 17 and 19: guidance follows buyer persona and actual pain; it does not promise unverified savings, integrations or product capabilities.
+
