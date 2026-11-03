@@ -6,6 +6,7 @@ import net from 'node:net';
 import assert from 'node:assert/strict';
 import {S3Client,HeadBucketCommand,GetObjectCommand,DeleteObjectCommand} from '@aws-sdk/client-s3';
 import pg from 'pg';
+if(process.argv.includes('--help')){console.log('Use DATABASE_URL and AWS_* for an isolated non-production branch, then run pnpm verify:neon. HTTP timeout defaults to 60 seconds; override with NEON_VERIFY_HTTP_TIMEOUT_MS. Test-owned rows and PDFs are cleaned up.');process.exit(0);}
 for(const file of ['.env','.env.local']){try{loadEnvFile(file);}catch(error){if(error.code!=='ENOENT')throw error;}}
 const required=['DATABASE_URL','AWS_ENDPOINT_URL_S3','AWS_REGION','AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY'];
 const missing=required.filter(key=>!process.env[key]);
@@ -18,7 +19,7 @@ const origin='http://127.0.0.1:'+port;
 const child=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',String(port)],{env:{...process.env,APP_PASSWORD:password,SESSION_SECRET:sessionSecret},stdio:['ignore','pipe','pipe']});
 let terminal='';child.stdout.on('data',chunk=>{terminal+=chunk;});child.stderr.on('data',chunk=>{terminal+=chunk;});
 function request(path,{method='GET',body,cookie}={}){return new Promise((resolve,reject)=>{
- const req=http.request(origin+path,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{})},timeout:20000},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,bytes:Buffer.concat(chunks)}));});
+ const req=http.request(origin+path,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{})},timeout:Number(process.env.NEON_VERIFY_HTTP_TIMEOUT_MS||60000)},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,bytes:Buffer.concat(chunks)}));});
  req.on('error',reject);req.on('timeout',()=>req.destroy(new Error('HTTP request timed out')));if(body)req.write(JSON.stringify(body));req.end();});}
 let objectKey,created=false,failures=0;
 try{
