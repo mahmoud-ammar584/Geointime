@@ -23,7 +23,7 @@ const templateDir = process.env.QUOTATION_TEMPLATE_DIR || '/home/ubuntu/upload';
 const decode = value => Uint8Array.from(Buffer.from(value, 'base64'));
 const execFile = promisify(execFileCallback);
 const template = async plan => readFile(path.join(templateDir, `GeoInTime_Quotation_Workforce_${plan}_Bank_Transfer.pdf`));
-const baseInput = { employees: 60, plan: 'essentials', cycle: 'annual', discount: 0, taxMode: 'egypt', startDate: '2026-10-25', extraAmount: '' };
+const baseInput = { annualPricing:'ten-month',employees: 60, plan: 'essentials', cycle: 'annual', discount: 0, taxMode: 'egypt', startDate: '2026-10-25', extraAmount: '' };
 const baseQuote = (changes = {}) => calculate({ ...baseInput, ...changes });
 const assetsFor = () => ({ fontBytes: decode(assets.font), boldBytes: decode(assets.bold), semiBytes: decode(assets.semi), fontkit });
 const assert422 = (fn, code) => {
@@ -57,7 +57,7 @@ test('validates a standard annual quote with implementation as a supported expli
   assert.equal(result.cycleMonths, 12);
   assert.equal(quote.implementation, 750000);
   assert.equal(quote.schedule[0].implementation, 750000);
-  assert.equal(quote.firstYearTotal, 5369400);
+  assert.equal(quote.firstYearTotal, 4617000);
 });
 
 test('blocks unresolved tax, incomplete setup, unsupported plan, unsupported optional fees, and missing approval', () => {
@@ -173,8 +173,8 @@ test('renders financially meaningful dynamic values and preserves the static Use
     assert.match(stdout, /7%/);
     assert.match(stdout, /51\.15 EGP/);
     assert.match(stdout, /Europe\/London/);
-    assert.match(stdout, /52,500\.00 EGP/);
-    assert.match(stdout, /-2,772\.00 EGP/);
+    assert.match(stdout, /45,900\.00 EGP/);
+    assert.match(stdout, /-2,310\.00 EGP/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -235,3 +235,5 @@ test('accepts the frontend PNG data URL without requiring a server-side characte
   });
   assert.equal((await PDFLib.PDFDocument.load(bytes)).getPageCount(), 5);
 });
+
+ test('historical annual twelve-month prices cannot use the current ten-month source offer',()=>{assert.throws(()=>validateWorkforceQuotation(baseQuote({annualPricing:'legacy12'})),e=>e.code==='pricing.legacy-annual');});

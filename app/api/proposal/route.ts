@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const original = kind ? await readProposal(WORKFORCE_TEMPLATES[kind].key) : null;
     const sourceHash = kind ? verifyTemplateBytes(kind, original) : null;
     if (workforce) validateWorkforceQuotation(context.quote, { approvalRecorded: context.approvalRecorded });
-    const format = workforce ? GENERATOR_VERSION + '-' + sourceHash : 'geointime-pdf-v1';
+    const format = workforce ? GENERATOR_VERSION + '-' + sourceHash : 'geointime-pdf-v2-ten-month';
     const key = proposalArchiveKey(owner, row, context, format);
     let bytes = await readProposal(key);
     const source = bytes ? 'archive' : 'generated';
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
       'X-GeoInTime-PDF-Source': source,
       'X-GeoInTime-PDF-Template': kind || 'legacy-full',
       ...(sourceHash ? { 'X-GeoInTime-Template-SHA256': sourceHash } : {}),
-      'X-GeoInTime-PDF-Version': workforce ? GENERATOR_VERSION : 'geointime-pdf-v1',
+      'X-GeoInTime-PDF-Version': workforce ? GENERATOR_VERSION : 'geointime-pdf-v2-ten-month',
       'Content-Type': 'application/pdf',
       'Content-Disposition': (url.searchParams.get('preview') === '1' ? 'inline' : 'attachment') + '; filename="' + filename + '.pdf"',
       'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
