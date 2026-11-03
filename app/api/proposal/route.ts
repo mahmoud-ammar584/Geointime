@@ -3,9 +3,7 @@ import { ownerFromRequest } from '../../../lib/server/session.mjs';
 import { getForOwner } from '../../../lib/server/database.mjs';
 import PDFLib from '../../../lib/vendor/pdf-lib.mjs';
 import fontkit from '../../../lib/vendor/fontkit.mjs';
-import { generateProposal } from '../../../lib/proposal.mjs';
 import { generateExactWorkforceQuotation, GENERATOR_VERSION, validateWorkforceQuotation, QuotationValidationError } from '../../../lib/quotation-v2.mjs';
-import assets from '../../../lib/proposal-assets.mjs';
 import workforceFonts from '../../../lib/proposal-assets/workforce-fonts.mjs';
 import { renderArabicName } from '../../../lib/server/customer-name.mjs';
 import { WORKFORCE_TEMPLATES, templateKindForPlan, verifyTemplateBytes, TemplateIntegrityError } from '../../../lib/server/quotation-templates.mjs';
@@ -28,34 +26,34 @@ export async function GET(request: Request) {
     const row = await getForOwner(owner, id);
     if (!row || row.kind !== 'quote') return failure('العرض غير موجود.', 404);
     const kind = templateKindForPlan(row.data.quote?.plan);
-    const workforce = kind !== null;
+    if(!kind)return failure('الباقة المحفوظة غير معروفة. راجع اختيار الباقة قبل إصدار العرض.',400);
     const context = proposalContext(row);
-    const original = kind ? await readProposal(WORKFORCE_TEMPLATES[kind].key) : null;
-    const sourceHash = kind ? verifyTemplateBytes(kind, original) : null;
-    if (workforce) validateWorkforceQuotation(context.quote, { approvalRecorded: context.approvalRecorded });
-    const format = workforce ? GENERATOR_VERSION + '-' + sourceHash : 'geointime-pdf-v2-ten-month';
+    const original = await readProposal(WORKFORCE_TEMPLATES[kind].key);
+    const sourceHash = verifyTemplateBytes(kind, original);
+    validateWorkforceQuotation(context.quote, { approvalRecorded: context.approvalRecorded });
+    const format = GENERATOR_VERSION + '-' + sourceHash;
     const key = proposalArchiveKey(owner, row, context, format);
     let bytes = await readProposal(key);
     const source = bytes ? 'archive' : 'generated';
     if (!bytes) {
-      const fonts = workforce ? workforceFonts : assets;
+      const fonts = workforceFonts;
       const options = {
-        ...context, templateBytes: workforce ? original! : decode(assets.template),
+        ...context, templateBytes: original!,
         timezone: context.workingHoursTimezone,
         fontBytes: decode(fonts.font), boldBytes: decode(fonts.bold), semiBytes: decode(fonts.semi), fontkit,
-        // Full Platform retains its original image-based/legacy PDF behavior.
-        customerImage: workforce ? await renderArabicName(context.customer) : row.data.customerImage || undefined,
-        preparedByImage: workforce ? await renderArabicName(context.preparedBy, { width: 114, fontSize: 9 }) : undefined,
+        // Every supported plan uses the approved five-page original automatically.
+        customerImage: await renderArabicName(context.customer),
+        preparedByImage: await renderArabicName(context.preparedBy, { width: 114, fontSize: 9 }),
       };
-      bytes = await (workforce ? generateExactWorkforceQuotation : generateProposal)(PDFLib, options);
+      bytes = await generateExactWorkforceQuotation(PDFLib, options);
       await writeProposal(key, bytes);
     }
     const filename = context.number.replace(/[^a-zA-Z0-9_-]/g, '_') || 'GeoInTime-Quotation';
     return new Response(bytes, { headers: {
       'X-GeoInTime-PDF-Source': source,
-      'X-GeoInTime-PDF-Template': kind || 'legacy-full',
+      'X-GeoInTime-PDF-Template': kind,
       ...(sourceHash ? { 'X-GeoInTime-Template-SHA256': sourceHash } : {}),
-      'X-GeoInTime-PDF-Version': workforce ? GENERATOR_VERSION : 'geointime-pdf-v2-ten-month',
+      'X-GeoInTime-PDF-Version': GENERATOR_VERSION,
       'Content-Type': 'application/pdf',
       'Content-Disposition': (url.searchParams.get('preview') === '1' ? 'inline' : 'attachment') + '; filename="' + filename + '.pdf"',
       'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',

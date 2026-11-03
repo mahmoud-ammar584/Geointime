@@ -210,40 +210,6 @@ $('proposal-preview-link').addEventListener('click',e=>{if($('proposal-download-
 
 
 
-async function refreshQuotationTemplateStatus(){
- try{
-  const response=await fetch('/api/quotation-templates',{credentials:'same-origin'});
-  const data=await response.json();
-  if(!response.ok)throw Error(data.error||'تعذر قراءة حالة القوالب');
-  for(const [kind,alias] of [['essentials','essentials'],['operations','operations']]){
-   const node=$(alias+'-template-status');
-   if(node)node.textContent=data[kind]?'القالب الأصلي مرفوع وبصمته متحققة'+(data.templates?.[kind]?.sha256?' — SHA-256: '+data.templates[kind].sha256:''):'القالب الأصلي غير مرفوع؛ لازم ترفعه لتفعيل التصميم الجديد.';
-  }
- }catch(e){for(const alias of ['essentials','operations']){const node=$(alias+'-template-status');if(node)node.textContent=e.message;}}
-}
-async function uploadQuotationTemplate(kind){
- const alias=kind==='essentials'?'essentials':'operations';
- const input=$(alias+'-template-file'),button=$('upload-'+alias+'-template');
- if(!input?.files?.length){notify('اختار ملف PDF الأصلي للباقة الأول.',true);return;}
- const file=input.files[0];
- if(file.size>4_000_000){notify('حجم الملف كبير؛ الحد الأقصى 4 MB.',true);return;}
- const form=new FormData();form.set('kind',kind);form.set('file',file);
- button.disabled=true;
- try{
-  const response=await fetch('/api/quotation-templates',{method:'POST',body:form,credentials:'same-origin'});
-  const result=await response.json();
-  if(!response.ok)throw Error(result.error||'فشل رفع القالب');
-  notify('تم حفظ القالب الأصلي. اعمل Generate للكوتيشن بعد اختيار الباقة.');
-  await refreshQuotationTemplateStatus();
-  $('proposal-download-link').hidden=true;$('proposal-preview-link').hidden=true;
- }catch(e){notify(e.message,true);}finally{button.disabled=false;}
-}
-$('upload-essentials-template')?.addEventListener('click',()=>uploadQuotationTemplate('essentials'));
-$('upload-operations-template')?.addEventListener('click',()=>uploadQuotationTemplate('operations'));
-$('quotation-template-settings')?.addEventListener('toggle',event=>{
- if(event.target.open)refreshQuotationTemplateStatus();
-});
-
 document.getElementById("logout")?.addEventListener("click", async () => { await fetch("/api/auth/logout", {method:"POST",credentials:"same-origin"});window.location.replace("/login"); });
 
 

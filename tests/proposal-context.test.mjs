@@ -12,13 +12,13 @@ function fixture() {
   } };
 }
 
-test('official plan routing preserves Full Platform legacy behavior', () => {
+test('all supported plans route to their original Workforce template', () => {
   assert.equal(templateKindForPlan('essentials'), 'essentials');
   assert.equal(templateKindForPlan('combined'), 'operations');
-  assert.equal(templateKindForPlan('full'), null);
+  assert.equal(templateKindForPlan('full'), 'operations');
 });
 test('missing, swapped and unapproved PDF bytes fail closed', () => {
-  assert.throws(() => verifyTemplateBytes('essentials', null), /مش مرفوع/);
+  assert.throws(() => verifyTemplateBytes('essentials', null), /تعذر تحميل/);
   assert.throws(() => verifyTemplateBytes('essentials', Buffer.from('%PDF-corrupt')), /بصمة/);
   assert.throws(() => verifyTemplateBytes('wrong', Buffer.from('%PDF')), /نوع/);
 });
