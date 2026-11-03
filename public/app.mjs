@@ -110,6 +110,7 @@ function summary() {
   return lines.filter(x=>x!==null).join('\n');
 }
 $('startDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+$('issuedDate').value=$('startDate').value;
 $('calculator-form').addEventListener('submit',e=>e.preventDefault());
 $('calculator-form').addEventListener('input',render);
 $('calculator-form').addEventListener('change',render);
@@ -126,8 +127,9 @@ render();
 export function loadQuote(d){
  HTMLFormElement.prototype.reset.call($('calculator-form'));
  for(const [key,value] of Object.entries(d.input)){const el=document.getElementById(key);if(el){if(el.type==='checkbox')el.checked=value;else el.value=value??'';}}
- if(d.input.taxMode===undefined){$('taxMode').value=d.quote?.taxRate==null?'unknown':'specified';$('taxRate').value=d.quote?.taxRate??14;}
- for(const [name,value] of [['plan',d.input.plan],['billing',d.input.cycle]]){const radio=document.querySelector(`input[name="${name}"][value="${value}"]`);if(radio)radio.checked=true;}
- $('customer').value=d.customer;document.body.classList.remove('presentation-mode');$('presentation').textContent='وضع عرض العميل ↗';render();
+  if(d.input.taxMode===undefined){$('taxMode').value=d.quote?.taxRate==null?'unknown':'specified';$('taxRate').value=d.quote?.taxRate??14;}
+  for(const [name,value] of [['plan',d.input.plan],['billing',d.input.cycle]]){const radio=document.querySelector(`input[name="${name}"][value="${value}"]`);if(radio)radio.checked=true;}
+  const details=d.quotationDetails??{};
+  for(const [id,value] of [['quotationReference',details.reference||''],['preparedBy',details.preparedBy||'Mahmoud Ammar'],['issuedDate',d.issuedDate||''],['expiresAt',details.expiresAt||''],['workingHoursTimezone',details.timezone||'Africa/Cairo']])$(id).value=value;
+  $('customer').value=d.customer;document.body.classList.remove('presentation-mode');$('presentation').textContent='وضع عرض العميل ↗';render();
 }
-

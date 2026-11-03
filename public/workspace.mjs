@@ -14,8 +14,11 @@ async function refresh(){try{db=await api();loaded=true;loadError='';$('quote-co
 function go(view){activeView=view;for(const name of ['quotation','ledger','targets','manager'])$(name+'-view').hidden=name!==view;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));document.body.classList.remove('presentation-mode');$('presentation').textContent='وضع عرض العميل ↗';window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));$('target-summary').addEventListener('click',()=>go('targets'));
 function draftData(){return {customer:$('customer').value.trim(),input:state(),status:'draft',dealType:'new',closingDate:null,activated:0,annualCommitment:false,commissionReview:{},activationDate:null,context:{},eligibleExtra:false,baselineMonthly:0,share:100,renewalRate:null,payoutRule:'auto',approvalNote:'',commissionPaid:0,adjustment:0,adjustmentNote:'',notes:'',payments:[]};}
+function quotationDetails(){return {reference:$('quotationReference').value.trim(),preparedBy:$('preparedBy').value.trim(),timezone:$('workingHoursTimezone').value.trim(),expiresAt:$('expiresAt').value||null};}
+function proposalSignature(){return JSON.stringify({input:state(),customer:$('customer').value,issuedDate:$('issuedDate').value,quotationDetails:quotationDetails()});}
+window.addEventListener('quote-reset',()=>{$('issuedDate').value=date();});
 async function saveCurrent(){if(saveBusy)return false;if(!latest){notify('استكمل بيانات السعر أولًا.',true);return false;}if(!$('customer').value.trim()){notify('اكتب اسم الشركة عشان نحفظ العرض باسمها.',true);$('customer').focus();return false;}saveBusy=true;try{
- if(!loaded)await refresh();const existing=db.records.find(r=>r.id===currentId);const data={...(existing?{...existing.data,customer:$('customer').value.trim(),input:state()}:draftData()),issuedDate:existing?.data.issuedDate||date(),customerImage:customerPNG($('customer').value.trim())};const id=currentId??uuid();const r=await api('POST',{id,kind:'quote',revision:currentRevision,data});currentId=id;currentRevision=r.revision;await refresh();notify('اتحفظ العرض. تقدر تتابع الإغلاق والتحصيل من السجل.');return true;
+ if(!loaded)await refresh();const existing=db.records.find(r=>r.id===currentId);const data={...(existing?{...existing.data,customer:$('customer').value.trim(),input:state()}:draftData()),issuedDate:$('issuedDate').value||existing?.data.issuedDate||date(),quotationDetails:quotationDetails(),customerImage:customerPNG($('customer').value.trim())};const id=currentId??uuid();const r=await api('POST',{id,kind:'quote',revision:currentRevision,data});currentId=id;currentRevision=r.revision;await refresh();notify('اتحفظ العرض. تقدر تتابع الإغلاق والتحصيل من السجل.');return true;
  }catch(e){notify(e.message,true);return false;}finally{saveBusy=false;}}
 registerSaver(saveCurrent);$('save-quote').addEventListener('click',saveCurrent);window.addEventListener('quote-reset',()=>{currentId=null;currentRevision=0;});
 function report(){return db.report??buildReport(db.records,db.settings);}
@@ -197,13 +200,13 @@ function customerPNG(customer){const c=document.createElement('canvas');c.width=
 $('proposal-pdf').addEventListener('click',async()=>{
  const button=$('proposal-pdf');if(!latest)return;if(latest.implementation===null){notify('استكمل رسوم التهيئة قبل إصدار البروپوزل.',true);return;}button.disabled=true;button.textContent='جاري حفظ البروپوزل…';try{
  if(!(await saveCurrent()))return;
- const record=db.records.find(r=>r.id===currentId),a=$('proposal-download-link');a.href='/api/proposal?id='+encodeURIComponent(record.id);a.dataset.signature=JSON.stringify(state())+$('customer').value;a.download='GeoInTime-Quotation.pdf';const checked=await fetch(a.href);if(!checked.ok)throw Error(await checked.text());if(!(checked.headers.get('content-type')||'').includes('application/pdf'))throw Error('استجابة تنزيل البروپوزل غير صحيحة.');const checkBytes=await checked.arrayBuffer();if(new TextDecoder().decode(checkBytes.slice(0,4))!=='%PDF')throw Error('ملف البروپوزل غير مكتمل.');a.textContent='تنزيل البروپوزل PDF ('+(checkBytes.byteLength/1024/1024).toFixed(1)+' MB) ↓';a.hidden=false;const preview=$('proposal-preview-link');preview.href=a.href+'&preview=1';preview.hidden=false;a.focus();notify('العرض اتحفظ. اضغط «تنزيل البروپوزل الجاهز» لتنزيل ملف PDF الأصلي بتفاصيلك.');
+ const record=db.records.find(r=>r.id===currentId),a=$('proposal-download-link');a.href='/api/proposal?id='+encodeURIComponent(record.id);a.dataset.signature=proposalSignature();a.download='GeoInTime-Quotation.pdf';const checked=await fetch(a.href);if(!checked.ok)throw Error(await checked.text());if(!(checked.headers.get('content-type')||'').includes('application/pdf'))throw Error('استجابة تنزيل البروپوزل غير صحيحة.');const checkBytes=await checked.arrayBuffer();if(new TextDecoder().decode(checkBytes.slice(0,4))!=='%PDF')throw Error('ملف البروپوزل غير مكتمل.');a.textContent='تنزيل البروپوزل PDF ('+(checkBytes.byteLength/1024/1024).toFixed(1)+' MB) ↓';a.hidden=false;const preview=$('proposal-preview-link');preview.href=a.href+'&preview=1';preview.hidden=false;a.focus();notify('العرض اتحفظ. اضغط «تنزيل البروپوزل الجاهز» لتنزيل ملف PDF الأصلي بتفاصيلك.');
  }catch(error){notify(error.message,true);}finally{button.disabled=false;button.textContent='تجهيز البروپوزل PDF ↓';}
 });
 
-$('proposal-download-link').addEventListener('click',e=>{if(e.currentTarget.dataset.signature!==JSON.stringify(state())+$('customer').value){e.preventDefault();e.currentTarget.hidden=true;notify('العرض اتغير؛ جهز البروپوزل من جديد قبل تنزيله.',true);}});
+$('proposal-download-link').addEventListener('click',e=>{if(e.currentTarget.dataset.signature!==proposalSignature()){e.preventDefault();e.currentTarget.hidden=true;notify('العرض اتغير؛ جهز البروپوزل من جديد قبل تنزيله.',true);}});
 document.getElementById('calculator-form').addEventListener('input',()=>{$('proposal-download-link').hidden=true;$('proposal-preview-link').hidden=true;});window.addEventListener('quote-reset',()=>{$('proposal-download-link').hidden=true;$('proposal-preview-link').hidden=true;});
-$('proposal-preview-link').addEventListener('click',e=>{if($('proposal-download-link').dataset.signature!==JSON.stringify(state())+$('customer').value){e.preventDefault();e.currentTarget.hidden=true;notify('العرض اتغير؛ جهز البروپوزل من جديد قبل معاينته.',true);}});
+$('proposal-preview-link').addEventListener('click',e=>{if($('proposal-download-link').dataset.signature!==proposalSignature()){e.preventDefault();e.currentTarget.hidden=true;notify('العرض اتغير؛ جهز البروپوزل من جديد قبل معاينته.',true);}});
 
 
 
@@ -214,7 +217,7 @@ async function refreshQuotationTemplateStatus(){
   if(!response.ok)throw Error(data.error||'تعذر قراءة حالة القوالب');
   for(const [kind,alias] of [['essentials','essentials'],['operations','operations']]){
    const node=$(alias+'-template-status');
-   if(node)node.textContent=data[kind]?'القالب الأصلي مرفوع وجاهز للاستخدام.':'القالب الأصلي غير مرفوع؛ لازم ترفعه لتفعيل التصميم الجديد.';
+   if(node)node.textContent=data[kind]?'القالب الأصلي مرفوع وبصمته متحققة'+(data.templates?.[kind]?.sha256?' — SHA-256: '+data.templates[kind].sha256:''):'القالب الأصلي غير مرفوع؛ لازم ترفعه لتفعيل التصميم الجديد.';
   }
  }catch(e){for(const alias of ['essentials','operations']){const node=$(alias+'-template-status');if(node)node.textContent=e.message;}}
 }
