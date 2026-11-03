@@ -32,7 +32,7 @@ export async function POST(request:Request){
   if(item.size>4_000_000||item.size<1000)return res({error:'PDF file size must be 1KB to 4MB.'},413);
   const bytes=new Uint8Array(await item.arrayBuffer());
   if(Buffer.from(bytes.subarray(0,5)).toString('latin1')!=='%PDF-')return res({error:'Invalid PDF header'},400);
-  const doc=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:false});
+  const doc=await (PDFLib as any).PDFDocument.load(bytes,{ignoreEncryption:false});
   if(doc.getPageCount()!==5)return res({error:'The original Workforce PDF must have five A4 pages.'},400);
   const first=doc.getPage(0);
   if(Math.abs(first.getWidth()-595)>3||Math.abs(first.getHeight()-842)>3)return res({error:'Expected A4 original quotation PDF'},400);
