@@ -4,11 +4,12 @@ const money = value => value === null ? 'بانتظار التسعير' : new In
 const price = value => `${money(value)} <small>ج.م</small>`;
 const escape = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateText = date => new Intl.DateTimeFormat('ar-EG',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(date+'T12:00:00Z'));
+let annualPricing='ten-month';
 export let latest = null;
 let beforeExport = async () => true;
 export function registerSaver(fn){beforeExport=fn;}
 export function state() {
-  return { employees: $('employees').value, plan: document.querySelector('[name=plan]:checked')?.value, cycle: document.querySelector('[name=billing]:checked')?.value, startDate: $('startDate').value, discount: $('discount').value || 0, extraAmount: $('extraAmount').value, extraBasis: $('extraBasis').value, extraCadence: $('extraCadence').value, otherOnce: $('otherOnce').value, hardwareQty:$('hardwareQty').value, hardwareUnitPrice:$('hardwareUnitPrice').value, complex: $('complex').checked, customImplementation: $('customImplementation').value, taxMode: $('taxMode').value, taxRate: $('taxRate').value };
+  return { annualPricing,employees: $('employees').value, plan: document.querySelector('[name=plan]:checked')?.value, cycle: document.querySelector('[name=billing]:checked')?.value, startDate: $('startDate').value, discount: $('discount').value || 0, extraAmount: $('extraAmount').value, extraBasis: $('extraBasis').value, extraCadence: $('extraCadence').value, otherOnce: $('otherOnce').value, hardwareQty:$('hardwareQty').value, hardwareUnitPrice:$('hardwareUnitPrice').value, complex: $('complex').checked, customImplementation: $('customImplementation').value, taxMode: $('taxMode').value, taxRate: $('taxRate').value };
 }
 function row(label,value,cls='') { return `<div class="breakdown-row ${cls}"><span class="row-label">${label}</span><strong>${value}</strong></div>`; }
 export function render() {
@@ -73,6 +74,7 @@ export function render() {
   breakdown+=row(`خصم الباقة (${q.discount}%)`,`<span class="discount-value">${q.discountMonthly?'−':''}${money(q.discountMonthly)}</span>`);
   breakdown+=row('صافي الباقة / شهر',money(q.coreMonthly),'subtle');
   if(q.extrasAnnual) breakdown+=row('إضافات متكررة / سنة',money(q.extrasAnnual));
+  if(q.cycle==='annual')breakdown+=row(q.paidMonths===10?'سنوي مقدمًا: خدمة 12 شهر بسعر 10 شهور':'تسعير العرض القديم: 12 شهرًا',money(q.coreAnnual));
   breakdown+=row('الاشتراك والإضافات / 12 شهرًا',money(q.recurringAnnual));
   breakdown+=row('تهيئة لمرة واحدة',q.implementation===null?'غير محددة':money(q.implementation));
   if(q.hardwareTotal)breakdown+=row(`Locator: ${q.hardwareQty} × ${q.hardwareUnitPrice} ج.م`,money(q.hardwareTotal));
@@ -81,7 +83,7 @@ export function render() {
   $('breakdown').innerHTML=breakdown;
   $('year-total-label').textContent=taxed?'إجمالي أول سنة بالضريبة المدخلة':'إجمالي أول سنة قبل الضريبة';
   $('year-total').innerHTML=incomplete?'غير مكتمل':price(taxed?q.firstYearTotal:q.firstYearSubtotal);
-  $('year-note').textContent=incomplete?`البنود المعروفة: ${money(q.knownFirstYearSubtotal)} ج.م قبل الضريبة، ولا تشمل رسوم التهيئة غير المحددة.`:q.cycle==='monthly'?'تقدير استمرار 12 شهرًا؛ لا يمثل التزامًا سنويًا. يتضمن التهيئة مرة واحدة.':'يتضمن رسوم التهيئة والإضافات المدخلة، وفق جدول أول 12 شهرًا.';
+  $('year-note').textContent=incomplete?`البنود المعروفة: ${money(q.knownFirstYearSubtotal)} ج.م قبل الضريبة، ولا تشمل رسوم التهيئة غير المحددة.`:q.cycle==='monthly'?'تقدير استمرار 12 شهرًا؛ لا يمثل التزامًا سنويًا. يتضمن التهيئة مرة واحدة.':q.cycle==='annual'&&q.paidMonths===10?'اشتراك 12 شهرًا بسعر 10 شهور؛ الخصم على الاشتراك فقط، والتهيئة والإضافات حسب بنودها.':'يتضمن رسوم التهيئة والإضافات المدخلة، وفق جدول أول 12 شهرًا.';
   $('insight-title').textContent=q.plan==='full'?'قيمة المنصة الكاملة':'مقارنة بالمنصة الكاملة';
   $('insight-body').textContent=q.plan==='full'?'توفيرك مقارنة بشراء Essentials وإضافة Operations بشكل منفصل.':'Full Platform أقل من جمع الباقة الأساسية وإضافة العمليات بالسعر الأساسي.';
   $('insight-value').innerHTML=price(q.fullSavingAnnual)+' <small>/ سنة</small>';
@@ -110,13 +112,14 @@ function summary() {
   return lines.filter(x=>x!==null).join('\n');
 }
 $('startDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+$('issuedDate').value=$('startDate').value;
 $('calculator-form').addEventListener('submit',e=>e.preventDefault());
 $('calculator-form').addEventListener('input',render);
 $('calculator-form').addEventListener('change',render);
 for(const [id,delta] of [['plus',1],['minus',-1]]) $(id).addEventListener('click',()=>{$('employees').value=Math.max(1,Math.min(1000000,(Number($('employees').value)||1)+delta));render();});
 document.querySelectorAll('[data-discount]').forEach(button=>button.addEventListener('click',()=>{$('discount').value=button.dataset.discount;render();}));
 $('presentation').addEventListener('click',()=>{const active=document.body.classList.toggle('presentation-mode');$('presentation').setAttribute('aria-pressed',String(active));$('presentation').textContent=active?'↙ الرجوع لتعديل العرض':'وضع عرض العميل ↗';});
-$('reset').addEventListener('click',()=>{HTMLFormElement.prototype.reset.call($('calculator-form'));$('startDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());document.querySelector('.settings').open=false;$('copy-status').textContent='';render();window.dispatchEvent(new Event('quote-reset'));});
+$('reset').addEventListener('click',()=>{annualPricing='ten-month';HTMLFormElement.prototype.reset.call($('calculator-form'));$('startDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());document.querySelector('.settings').open=false;$('copy-status').textContent='';render();window.dispatchEvent(new Event('quote-reset'));});
 $('copy').addEventListener('click',async()=>{if(!latest||!(await beforeExport()))return;const text=summary();try{await navigator.clipboard.writeText(text);$('copy-status').textContent='تم نسخ الملخص ✓';}catch{$('copy-text').value=text;$('copy-fallback').showModal();$('copy-text').select();}});
 $('close-dialog').addEventListener('click',()=>$('copy-fallback').close());
 $('print').addEventListener('click',async()=>{if(latest&&await beforeExport())window.print();});
@@ -124,10 +127,12 @@ window.addEventListener('beforeprint',()=>{document.querySelector('.policy-notes
 render();
 
 export function loadQuote(d){
+ annualPricing=d.input.annualPricing??d.quote?.annualPricing??'legacy12';
  HTMLFormElement.prototype.reset.call($('calculator-form'));
  for(const [key,value] of Object.entries(d.input)){const el=document.getElementById(key);if(el){if(el.type==='checkbox')el.checked=value;else el.value=value??'';}}
- if(d.input.taxMode===undefined){$('taxMode').value=d.quote?.taxRate==null?'unknown':'specified';$('taxRate').value=d.quote?.taxRate??14;}
- for(const [name,value] of [['plan',d.input.plan],['billing',d.input.cycle]]){const radio=document.querySelector(`input[name="${name}"][value="${value}"]`);if(radio)radio.checked=true;}
- $('customer').value=d.customer;document.body.classList.remove('presentation-mode');$('presentation').textContent='وضع عرض العميل ↗';render();
+  if(d.input.taxMode===undefined){$('taxMode').value=d.quote?.taxRate==null?'unknown':'specified';$('taxRate').value=d.quote?.taxRate??14;}
+  for(const [name,value] of [['plan',d.input.plan],['billing',d.input.cycle]]){const radio=document.querySelector(`input[name="${name}"][value="${value}"]`);if(radio)radio.checked=true;}
+  const details=d.quotationDetails??{};
+  for(const [id,value] of [['quotationReference',details.reference||''],['preparedBy',details.preparedBy||'Mahmoud Ammar'],['issuedDate',d.issuedDate||''],['expiresAt',details.expiresAt||''],['workingHoursTimezone',details.timezone||'Africa/Cairo']])$(id).value=value;
+  $('customer').value=d.customer;document.body.classList.remove('presentation-mode');$('presentation').textContent='وضع عرض العميل ↗';render();
 }
-

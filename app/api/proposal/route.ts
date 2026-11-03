@@ -1,42 +1,80 @@
-import { createHash } from 'node:crypto';
 import { readProposal, writeProposal } from '../../../lib/server/storage.mjs';
 import { ownerFromRequest } from '../../../lib/server/session.mjs';
 import { getForOwner } from '../../../lib/server/database.mjs';
-// @ts-ignore vendored PDF toolkit
 import PDFLib from '../../../lib/vendor/pdf-lib.mjs';
-// @ts-ignore vendored browser-safe fontkit
 import fontkit from '../../../lib/vendor/fontkit.mjs';
-// @ts-ignore
-import {generateProposal} from '../../../lib/proposal.mjs';
-// @ts-ignore seven-page Workforce quotation generator
-import {generateExactWorkforceQuotation} from '../../../lib/quotation-v2.mjs';
-// @ts-ignore source-embedded template assets
+import { generateProposal } from '../../../lib/proposal.mjs';
+import { generateExactWorkforceQuotation, GENERATOR_VERSION, validateWorkforceQuotation, QuotationValidationError } from '../../../lib/quotation-v2.mjs';
 import assets from '../../../lib/proposal-assets.mjs';
-export const dynamic='force-dynamic';
-export const runtime='nodejs';
-const decode=(s:string)=>Uint8Array.from(Buffer.from(s,'base64'));
-function expiry(start:string){const d=new Date(start+'T12:00:00Z');let n=0;while(n<7){d.setUTCDate(d.getUTCDate()+1);if(![5,6].includes(d.getUTCDay()))n++;}return d.toISOString().slice(0,10);}
-export async function GET(request:Request){
- const owner=ownerFromRequest(request);if(!owner)return new Response('تسجيل الدخول مطلوب.',{status:401});
- const id=new URL(request.url).searchParams.get('id');if(!id||!/^[a-zA-Z0-9_-]{1,80}$/.test(id))return new Response('معرّف العرض مطلوب.',{status:400});
- try{const row:any=await getForOwner(owner,id);if(!row||row.kind!=='quote')return new Response('العرض غير موجود.',{status:404});
- const d=row.data,issued=d.issuedDate||row.created_at.slice(0,10),number='GIT-'+issued.replaceAll('-','')+'-'+id.slice(0,6).toUpperCase();
- const templatePath:Record<string,string>={essentials:'quotation-templates/workforce-essentials-original.pdf',combined:'quotation-templates/workforce-operations-original.pdf'};
- const workforce=Object.hasOwn(templatePath,d.quote?.plan);
- const original=workforce?await readProposal(templatePath[d.quote.plan]):null;
- if(workforce&&!original) return new Response('القالب الأصلي للباقة مش مرفوع. افتح إعدادات قوالب الكوتيشن وارفع PDF الأصلي.',{status:409});
- const format=workforce?'workforce-source-v3-'+createHash('sha256').update(original!).digest('hex'):'geointime-pdf-v1';
- const key='proposals/'+encodeURIComponent(owner)+'/'+id+'/'+createHash('sha256').update(JSON.stringify({revision:row.revision,data:d,issued,format})).digest('hex')+'.pdf';
- let bytes=await readProposal(key);
- const source=bytes?'archive':'generated';
- if(!bytes){
-  bytes=await (workforce?generateExactWorkforceQuotation:generateProposal)(PDFLib,{
-   templateBytes:workforce?original!:decode(assets.template),
-   fontBytes:decode(assets.font),boldBytes:decode(assets.bold),semiBytes:decode(assets.semi),fontkit,
-   quote:d.quote,approvalRecorded:!!d.approvalNote?.trim(),customer:d.customer,
-   customerImage:d.customerImage||undefined,number,issuedDate:issued,expiresAt:expiry(issued)
-  });
-  await writeProposal(key,bytes);
- }
- return new Response(bytes,{headers:{'X-GeoInTime-PDF-Source':source,'Content-Type':'application/pdf','Content-Disposition':(new URL(request.url).searchParams.get('preview')==='1'?'inline':'attachment')+'; filename="'+number+'.pdf"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
- }catch{return new Response('تعذر إنشاء البروپوزل؛ راجع البيانات وقاعدة التخزين.',{status:503});}}
+import workforceFonts from '../../../lib/proposal-assets/workforce-fonts.mjs';
+import { renderArabicName } from '../../../lib/server/customer-name.mjs';
+import { WORKFORCE_TEMPLATES, templateKindForPlan, verifyTemplateBytes, TemplateIntegrityError } from '../../../lib/server/quotation-templates.mjs';
+import { proposalContext, proposalArchiveKey, ProposalDataError } from '../../../lib/server/proposal-context.mjs';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+const decode = (value: string) => Uint8Array.from(Buffer.from(value, 'base64'));
+const failure = (message: string, status: number, code?: string) => new Response(message, {
+  status, headers: { 'Cache-Control': 'private, no-store', ...(code ? { 'X-GeoInTime-Error': code } : {}) },
+});
+
+export async function GET(request: Request) {
+  const owner = ownerFromRequest(request);
+  if (!owner) return failure('تسجيل الدخول مطلوب.', 401);
+  const url = new URL(request.url);
+  const id = url.searchParams.get('id');
+  if (!id || !/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return failure('معرّف العرض مطلوب.', 400);
+  try {
+    const row = await getForOwner(owner, id);
+    if (!row || row.kind !== 'quote') return failure('العرض غير موجود.', 404);
+    const kind = templateKindForPlan(row.data.quote?.plan);
+    const workforce = kind !== null;
+    const context = proposalContext(row);
+    const original = kind ? await readProposal(WORKFORCE_TEMPLATES[kind].key) : null;
+    const sourceHash = kind ? verifyTemplateBytes(kind, original) : null;
+    if (workforce) validateWorkforceQuotation(context.quote, { approvalRecorded: context.approvalRecorded });
+    const format = workforce ? GENERATOR_VERSION + '-' + sourceHash : 'geointime-pdf-v1';
+    const key = proposalArchiveKey(owner, row, context, format);
+    let bytes = await readProposal(key);
+    const source = bytes ? 'archive' : 'generated';
+    if (!bytes) {
+      const fonts = workforce ? workforceFonts : assets;
+      const options = {
+        ...context, templateBytes: workforce ? original! : decode(assets.template),
+        timezone: context.workingHoursTimezone,
+        fontBytes: decode(fonts.font), boldBytes: decode(fonts.bold), semiBytes: decode(fonts.semi), fontkit,
+        // Full Platform retains its original image-based/legacy PDF behavior.
+        customerImage: workforce ? await renderArabicName(context.customer) : row.data.customerImage || undefined,
+        preparedByImage: workforce ? await renderArabicName(context.preparedBy, { width: 114, fontSize: 9 }) : undefined,
+      };
+      bytes = await (workforce ? generateExactWorkforceQuotation : generateProposal)(PDFLib, options);
+      await writeProposal(key, bytes);
+    }
+    const filename = context.number.replace(/[^a-zA-Z0-9_-]/g, '_') || 'GeoInTime-Quotation';
+    return new Response(bytes, { headers: {
+      'X-GeoInTime-PDF-Source': source,
+      'X-GeoInTime-PDF-Template': kind || 'legacy-full',
+      ...(sourceHash ? { 'X-GeoInTime-Template-SHA256': sourceHash } : {}),
+      'X-GeoInTime-PDF-Version': workforce ? GENERATOR_VERSION : 'geointime-pdf-v1',
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': (url.searchParams.get('preview') === '1' ? 'inline' : 'attachment') + '; filename="' + filename + '.pdf"',
+      'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+    } });
+  } catch (error) {
+    if (error instanceof QuotationValidationError) {
+      const messages: Record<string, string> = {
+        'fees.unsupported': 'الإضافات المتكررة أو الرسوم الأخرى لمرة واحدة مش لها مساحة واضحة في القالب الرسمي. اتمنع إصدار PDF عشان مفيش رسوم تتخبّى في الإجمالي. راجع نطاق الرسوم قبل الإصدار.',
+        'tax.unknown': 'الضريبة غير محددة. اختار وضع ضريبة واضح قبل إصدار ملف العميل.',
+        'approval.required': 'العرض محتاج اعتماد تجاري موثّق. افتح تفاصيل الديل وسجّل اعتماد الإدارة المختصة قبل إصدار الملف.',
+        'implementation.missing': 'رسوم التهيئة ناقصة. استكمل رسوم النطاق المعتمدة قبل إصدار ملف العميل.',
+        'layout.overflow': 'أحد الحقول أطول من مساحته الأصلية في القالب. اختصر اسم الشركة أو المرجع أو مُعدّ العرض؛ لن يتم قص النص أو تصغيره بشكل غير مقروء.',
+      };
+      return failure(messages[error.code] || error.message, error.status, error.code);
+    }
+    if (error instanceof TemplateIntegrityError || error instanceof ProposalDataError) {
+      return failure(error.message, error.status, error.code);
+    }
+    console.error('Quotation generation failed', { name: error instanceof Error ? error.name : 'UnknownError' });
+    return failure('تعذر إنشاء عرض السعر؛ راجع اتصال قاعدة البيانات والتخزين الخاص، وحاول تاني.', 503);
+  }
+}
