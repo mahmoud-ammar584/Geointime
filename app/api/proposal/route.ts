@@ -8,6 +8,8 @@ import PDFLib from '../../../lib/vendor/pdf-lib.mjs';
 import fontkit from '../../../lib/vendor/fontkit.mjs';
 // @ts-ignore
 import {generateProposal} from '../../../lib/proposal.mjs';
+// @ts-ignore seven-page Workforce quotation generator
+import {generateExactWorkforceQuotation} from '../../../lib/quotation-v2.mjs';
 // @ts-ignore source-embedded template assets
 import assets from '../../../lib/proposal-assets.mjs';
 export const dynamic='force-dynamic';
@@ -19,9 +21,22 @@ export async function GET(request:Request){
  const id=new URL(request.url).searchParams.get('id');if(!id||!/^[a-zA-Z0-9_-]{1,80}$/.test(id))return new Response('معرّف العرض مطلوب.',{status:400});
  try{const row:any=await getForOwner(owner,id);if(!row||row.kind!=='quote')return new Response('العرض غير موجود.',{status:404});
  const d=row.data,issued=d.issuedDate||row.created_at.slice(0,10),number='GIT-'+issued.replaceAll('-','')+'-'+id.slice(0,6).toUpperCase();
- const key='proposals/'+encodeURIComponent(owner)+'/'+id+'/'+createHash('sha256').update(JSON.stringify({revision:row.revision,data:d,issued,format:'geointime-pdf-v1'})).digest('hex')+'.pdf';
+ const templatePath:Record<string,string>={essentials:'quotation-templates/workforce-essentials-original.pdf',combined:'quotation-templates/workforce-operations-original.pdf'};
+ const workforce=Object.hasOwn(templatePath,d.quote?.plan);
+ const original=workforce?await readProposal(templatePath[d.quote.plan]):null;
+ if(workforce&&!original) return new Response('القالب الأصلي للباقة مش مرفوع. افتح إعدادات قوالب الكوتيشن وارفع PDF الأصلي.',{status:409});
+ const format=workforce?'workforce-source-v3-'+createHash('sha256').update(original!).digest('hex'):'geointime-pdf-v1';
+ const key='proposals/'+encodeURIComponent(owner)+'/'+id+'/'+createHash('sha256').update(JSON.stringify({revision:row.revision,data:d,issued,format})).digest('hex')+'.pdf';
  let bytes=await readProposal(key);
  const source=bytes?'archive':'generated';
- if(!bytes){bytes=await generateProposal(PDFLib,{templateBytes:decode(assets.template),fontBytes:decode(assets.font),boldBytes:decode(assets.bold),semiBytes:decode(assets.semi),fontkit,quote:d.quote,approvalRecorded:!!d.approvalNote?.trim(),customer:d.customer,customerImage:d.customerImage||undefined,number,issuedDate:issued,expiresAt:expiry(issued)});await writeProposal(key,bytes);}
+ if(!bytes){
+  bytes=await (workforce?generateExactWorkforceQuotation:generateProposal)(PDFLib,{
+   templateBytes:workforce?original!:decode(assets.template),
+   fontBytes:decode(assets.font),boldBytes:decode(assets.bold),semiBytes:decode(assets.semi),fontkit,
+   quote:d.quote,approvalRecorded:!!d.approvalNote?.trim(),customer:d.customer,
+   customerImage:d.customerImage||undefined,number,issuedDate:issued,expiresAt:expiry(issued)
+  });
+  await writeProposal(key,bytes);
+ }
  return new Response(bytes,{headers:{'X-GeoInTime-PDF-Source':source,'Content-Type':'application/pdf','Content-Disposition':(new URL(request.url).searchParams.get('preview')==='1'?'inline':'attachment')+'; filename="'+number+'.pdf"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
  }catch{return new Response('تعذر إنشاء البروپوزل؛ راجع البيانات وقاعدة التخزين.',{status:503});}}
